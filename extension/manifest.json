@@ -1,0 +1,21 @@
+﻿{
+  "manifest_version": 3,
+  "name": "WebArchive Collector",
+  "version": "0.1.0",
+  "description": "Capture readable web content and send to WebArchive backend.",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "http://localhost:8080/*",
+    "http://127.0.0.1:8080/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["readability.js", "content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}
