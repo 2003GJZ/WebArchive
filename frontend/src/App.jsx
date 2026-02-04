@@ -13,15 +13,24 @@ export default function App() {
   const [items, setItems] = useState([])
   const [selected, setSelected] = useState(null)
   const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('')
+  const [tag, setTag] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [form, setForm] = useState({ category: '', tags: '' })
+  const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
+  const loadArchives = async () => {
     const fetchData = async () => {
       setLoading(true)
       setError('')
       try {
-        const res = await fetch(`${API_BASE}/api/archives`)
+        const params = new URLSearchParams()
+        if (query) params.set('q', query)
+        if (category) params.set('category', category)
+        if (tag) params.set('tag', tag)
+        const qs = params.toString()
+        const res = await fetch(`${API_BASE}/api/archives${qs ? `?${qs}` : ''}`)
         if (!res.ok) throw new Error('加载失败')
         const data = await res.json()
         setItems(data)
@@ -33,7 +42,21 @@ export default function App() {
       }
     }
     fetchData()
+  }
+
+  useEffect(() => {
+    loadArchives()
   }, [])
+
+  useEffect(() => {
+    if (!selected) {
+      setForm({ category: '', tags: '' })
+      return
+    }
+    let tags = []
+    if (Array.isArray(selected.tags)) tags = selected.tags
+    setForm({ category: selected.category || '', tags: tags.join(', ') })
+  }, [selected])
 
   const filtered = useMemo(() => {
     if (!query) return items
@@ -76,11 +99,25 @@ export default function App() {
         <section className="panel list-panel">
           <div className="panel-header">
             <h2>归档列表</h2>
+            <button type="button" className="ghost" onClick={loadArchives}>
+              刷新
+            </button>
+          </div>
+          <div className="filters">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索标题 / 站点 / URL"
+              placeholder="搜索标题 / 站点 / 正文"
             />
+            <input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="分类"
+            />
+            <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="标签" />
+            <button type="button" className="primary" onClick={loadArchives}>
+              搜索
+            </button>
           </div>
           {loading && <div className="hint">加载中…</div>}
           {error && <div className="error">{error}</div>}
@@ -113,6 +150,54 @@ export default function App() {
               </a>
             )}
           </div>
+          {selected && (
+            <div className="meta-panel">
+              <div>
+                <label>分类</label>
+                <input
+                  value={form.category}
+                  onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}
+                  placeholder="例如：技术/产品"
+                />
+              </div>
+              <div>
+                <label>标签</label>
+                <input
+                  value={form.tags}
+                  onChange={(e) => setForm((s) => ({ ...s, tags: e.target.value }))}
+                  placeholder="用逗号分隔"
+                />
+              </div>
+              <button
+                type="button"
+                className="primary"
+                disabled={!selected || saving}
+                onClick={async () => {
+                  if (!selected) return
+                  setSaving(true)
+                  try {
+                    const tags = form.tags
+                      .split(',')
+                      .map((t) => t.trim())
+                      .filter(Boolean)
+                    const res = await fetch(`${API_BASE}/api/archives/${selected.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ category: form.category, tags }),
+                    })
+                    if (!res.ok) throw new Error('保存失败')
+                    await loadArchives()
+                  } catch (err) {
+                    setError(err.message || '保存失败')
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+              >
+                {saving ? '保存中…' : '保存元信息'}
+              </button>
+            </div>
+          )}
           {!selected && <div className="hint">选择左侧内容即可预览</div>}
           {selected && (
             <iframe

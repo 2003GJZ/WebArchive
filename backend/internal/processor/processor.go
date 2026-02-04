@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -36,6 +37,11 @@ type Processor struct {
 	BaseURL string
 }
 
+type assetInfo struct {
+	Stored      string
+	ContentType string
+}
+
 func New(store *storage.MinioStore, timeout time.Duration) *Processor {
 	return &Processor{
 		Store: store,
@@ -50,6 +56,7 @@ func (p *Processor) Process(ctx context.Context, archiveID string, pageURL strin
 		return nil, errors.New("empty html")
 	}
 
+	cache := make(map[string]assetInfo)
 	doc, err := html.Parse(bytes.NewReader(rawHTML))
 	if err != nil {
 		return nil, err
@@ -65,12 +72,45 @@ func (p *Processor) Process(ctx context.Context, archiveID string, pageURL strin
 			case "img", "source", "video", "audio", "script":
 				for i := range n.Attr {
 					if n.Attr[i].Key == "src" {
-						updated, asset := p.handleURL(ctx, archiveID, base, n.Attr[i].Val)
-						if asset != nil {
-							assets = append(assets, *asset)
+						updated, foundAssets := p.handleURL(ctx, archiveID, base, n.Attr[i].Val, cache)
+						if updated != "" {
 							n.Attr[i].Val = updated
 						}
+						if len(foundAssets) > 0 {
+							assets = append(assets, foundAssets...)
+						}
 						break
+					}
+				}
+				// handle common lazy-load attrs for images
+				if strings.ToLower(n.Data) == "img" {
+					lazyAttrs := []string{"data-src", "data-original", "data-lazy-src", "data-lazy"}
+					for _, key := range lazyAttrs {
+						for i := range n.Attr {
+							if n.Attr[i].Key == key {
+								updated, foundAssets := p.handleURL(ctx, archiveID, base, n.Attr[i].Val, cache)
+								if updated != "" {
+									n.Attr[i].Key = "src"
+									n.Attr[i].Val = updated
+								}
+								if len(foundAssets) > 0 {
+									assets = append(assets, foundAssets...)
+								}
+								break
+							}
+						}
+					}
+					for i := range n.Attr {
+						if n.Attr[i].Key == "srcset" {
+							updated, foundAssets := p.handleSrcset(ctx, archiveID, base, n.Attr[i].Val, cache)
+							if updated != "" {
+								n.Attr[i].Val = updated
+							}
+							if len(foundAssets) > 0 {
+								assets = append(assets, foundAssets...)
+							}
+							break
+						}
 					}
 				}
 			case "link":
@@ -78,10 +118,12 @@ func (p *Processor) Process(ctx context.Context, archiveID string, pageURL strin
 				if strings.Contains(rel, "stylesheet") || strings.Contains(rel, "icon") {
 					for i := range n.Attr {
 						if n.Attr[i].Key == "href" {
-							updated, asset := p.handleURL(ctx, archiveID, base, n.Attr[i].Val)
-							if asset != nil {
-								assets = append(assets, *asset)
+							updated, foundAssets := p.handleURL(ctx, archiveID, base, n.Attr[i].Val, cache)
+							if updated != "" {
 								n.Attr[i].Val = updated
+							}
+							if len(foundAssets) > 0 {
+								assets = append(assets, foundAssets...)
 							}
 							break
 						}
@@ -104,7 +146,40 @@ func (p *Processor) Process(ctx context.Context, archiveID string, pageURL strin
 	return &Result{HTML: out.Bytes(), Assets: assets}, nil
 }
 
-func (p *Processor) handleURL(ctx context.Context, archiveID string, base *url.URL, raw string) (string, *Asset) {
+func (p *Processor) handleSrcset(ctx context.Context, archiveID string, base *url.URL, raw string, cache map[string]assetInfo) (string, []Asset) {
+	parts := strings.Split(raw, ",")
+	assets := make([]Asset, 0)
+	updatedParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			continue
+		}
+		urlPart := fields[0]
+		descriptor := ""
+		if len(fields) > 1 {
+			descriptor = " " + strings.Join(fields[1:], " ")
+		}
+		updated, foundAssets := p.handleURL(ctx, archiveID, base, urlPart, cache)
+		if updated == "" {
+			updated = urlPart
+		}
+		if len(foundAssets) > 0 {
+			assets = append(assets, foundAssets...)
+		}
+		updatedParts = append(updatedParts, updated+descriptor)
+	}
+	if len(updatedParts) == 0 {
+		return raw, nil
+	}
+	return strings.Join(updatedParts, ", "), assets
+}
+
+func (p *Processor) handleURL(ctx context.Context, archiveID string, base *url.URL, raw string, cache map[string]assetInfo) (string, []Asset) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.HasPrefix(raw, "data:") || strings.HasPrefix(raw, "javascript:") {
 		return raw, nil
@@ -123,35 +198,44 @@ func (p *Processor) handleURL(ctx context.Context, archiveID string, base *url.U
 		return raw, nil
 	}
 
-	storedPath, contentType, err := p.downloadAndStore(ctx, archiveID, u.String())
+	storedPath, contentType, extraAssets, err := p.downloadAndStore(ctx, archiveID, u.String(), cache)
 	if err != nil {
 		return raw, nil
 	}
 
 	apiPath := fmt.Sprintf("/api/assets/%s/%s", archiveID, storedPath)
-	return apiPath, &Asset{Original: u.String(), Stored: storedPath, Type: contentType}
+	assets := make([]Asset, 0, 1+len(extraAssets))
+	assets = append(assets, Asset{Original: u.String(), Stored: storedPath, Type: contentType})
+	if len(extraAssets) > 0 {
+		assets = append(assets, extraAssets...)
+	}
+	return apiPath, assets
 }
 
-func (p *Processor) downloadAndStore(ctx context.Context, archiveID string, rawURL string) (string, string, error) {
+func (p *Processor) downloadAndStore(ctx context.Context, archiveID string, rawURL string, cache map[string]assetInfo) (string, string, []Asset, error) {
+	if info, ok := cache[rawURL]; ok {
+		return info.Stored, info.ContentType, nil, nil
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	req.Header.Set("User-Agent", "WebArchiveBot/0.1")
 
 	resp, err := p.Client.Do(req)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", fmt.Errorf("bad status: %d", resp.StatusCode)
+		return "", "", nil, fmt.Errorf("bad status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 
 	parsed, _ := url.Parse(rawURL)
@@ -175,11 +259,97 @@ func (p *Processor) downloadAndStore(ctx context.Context, archiveID string, rawU
 
 	objectPath := path.Join(storage.ArchivePrefix(archiveID), "assets", name)
 	contentType := storage.GuessContentType(name, resp.Header.Get("Content-Type"))
-	if err := p.Store.PutBytes(ctx, objectPath, body, contentType); err != nil {
-		return "", "", err
+
+	extraAssets := []Asset{}
+	if strings.Contains(contentType, "text/css") || strings.EqualFold(ext, ".css") {
+		rewritten, assets, err := p.rewriteCSS(ctx, archiveID, rawURL, body, cache)
+		if err == nil {
+			body = rewritten
+			extraAssets = append(extraAssets, assets...)
+		}
 	}
 
-	return path.Join("assets", name), contentType, nil
+	if err := p.Store.PutBytes(ctx, objectPath, body, contentType); err != nil {
+		return "", "", nil, err
+	}
+
+	storedPath := path.Join("assets", name)
+	cache[rawURL] = assetInfo{Stored: storedPath, ContentType: contentType}
+	return storedPath, contentType, extraAssets, nil
+}
+
+func (p *Processor) rewriteCSS(ctx context.Context, archiveID string, cssURL string, css []byte, cache map[string]assetInfo) ([]byte, []Asset, error) {
+	base, err := url.Parse(cssURL)
+	if err != nil {
+		return css, nil, err
+	}
+
+	assets := make([]Asset, 0)
+	reURL := regexp.MustCompile(`url\(([^)]+)\)`)
+	reImport := regexp.MustCompile(`@import\s+(?:url\()?\s*(['"]?)([^'")\s]+)\1\s*\)?`)
+
+	replaceFn := func(raw string) (string, *Asset, []Asset) {
+		raw = strings.TrimSpace(raw)
+		raw = strings.Trim(raw, `"'`)
+		if raw == "" || strings.HasPrefix(raw, "data:") || strings.HasPrefix(raw, "javascript:") {
+			return "", nil, nil
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", nil, nil
+		}
+		if base != nil {
+			u = base.ResolveReference(u)
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return "", nil, nil
+		}
+		storedPath, contentType, extraAssets, err := p.downloadAndStore(ctx, archiveID, u.String(), cache)
+		if err != nil {
+			return "", nil, nil
+		}
+		apiPath := fmt.Sprintf("/api/assets/%s/%s", archiveID, storedPath)
+		return apiPath, &Asset{Original: u.String(), Stored: storedPath, Type: contentType}, extraAssets
+	}
+
+	cssText := string(css)
+	cssText = reURL.ReplaceAllStringFunc(cssText, func(m string) string {
+		matches := reURL.FindStringSubmatch(m)
+		if len(matches) < 2 {
+			return m
+		}
+		apiPath, asset, extra := replaceFn(matches[1])
+		if asset != nil {
+			assets = append(assets, *asset)
+		}
+		if len(extra) > 0 {
+			assets = append(assets, extra...)
+		}
+		if apiPath == "" {
+			return m
+		}
+		return fmt.Sprintf("url(\"%s\")", apiPath)
+	})
+
+	cssText = reImport.ReplaceAllStringFunc(cssText, func(m string) string {
+		matches := reImport.FindStringSubmatch(m)
+		if len(matches) < 3 {
+			return m
+		}
+		apiPath, asset, extra := replaceFn(matches[2])
+		if asset != nil {
+			assets = append(assets, *asset)
+		}
+		if len(extra) > 0 {
+			assets = append(assets, extra...)
+		}
+		if apiPath == "" {
+			return m
+		}
+		return fmt.Sprintf("@import url(\"%s\")", apiPath)
+	})
+
+	return []byte(cssText), assets, nil
 }
 
 func attrValue(n *html.Node, key string) string {

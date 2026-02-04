@@ -45,7 +45,8 @@ npm run dev
 
 ## API 简要
 - `POST /api/archives` 保存归档
-- `GET /api/archives` 列表
+- `GET /api/archives` 列表（支持 `q`、`category`、`tag` 查询）
 - `GET /api/archives/:id` 详情
+- `PATCH /api/archives/:id` 更新分类/标签
 - `GET /api/archives/:id/html` 归档 HTML
 - `GET /api/assets/:id/*path` 资源代理

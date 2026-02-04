@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -33,6 +34,13 @@ type CreateArchiveRequest struct {
 	SiteName   string     `json:"siteName"`
 	Favicon    string     `json:"favicon"`
 	CapturedAt *time.Time `json:"capturedAt"`
+	Category   string     `json:"category"`
+	Tags       []string   `json:"tags"`
+}
+
+type UpdateArchiveRequest struct {
+	Category string   `json:"category"`
+	Tags     []string `json:"tags"`
 }
 
 func (s *Server) RegisterRoutes(r *gin.Engine) {
@@ -42,6 +50,7 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	api.POST("/archives", s.createArchive)
 	api.GET("/archives", s.listArchives)
 	api.GET("/archives/:id", s.getArchive)
+	api.PATCH("/archives/:id", s.updateArchive)
 	api.GET("/archives/:id/html", s.getArchiveHTML)
 	api.GET("/assets/:id/*path", s.getAsset)
 }
@@ -83,18 +92,22 @@ func (s *Server) createArchive(c *gin.Context) {
 	}
 
 	assetsJSON, _ := json.Marshal(result.Assets)
+	tagsJSON, _ := json.Marshal(req.Tags)
 
 	archive := models.Archive{
-		ID:         id,
-		Title:      req.Title,
-		URL:        req.URL,
-		SiteName:   req.SiteName,
-		Byline:     req.Byline,
-		Excerpt:    req.Excerpt,
-		Favicon:    req.Favicon,
-		CapturedAt: req.CapturedAt,
-		HTMLPath:   "index.html",
-		AssetsJSON: assetsJSON,
+		ID:          id,
+		Title:       req.Title,
+		URL:         req.URL,
+		SiteName:    req.SiteName,
+		Byline:      req.Byline,
+		Excerpt:     req.Excerpt,
+		Favicon:     req.Favicon,
+		Category:    req.Category,
+		TagsJSON:    tagsJSON,
+		ContentText: req.Content,
+		CapturedAt:  req.CapturedAt,
+		HTMLPath:    "index.html",
+		AssetsJSON:  assetsJSON,
 	}
 
 	if err := s.DB.Create(&archive).Error; err != nil {
@@ -107,7 +120,23 @@ func (s *Server) createArchive(c *gin.Context) {
 
 func (s *Server) listArchives(c *gin.Context) {
 	var items []models.Archive
-	if err := s.DB.Order("created_at desc").Find(&items).Error; err != nil {
+	query := c.Query("q")
+	category := c.Query("category")
+	tag := c.Query("tag")
+
+	db := s.DB
+	if query != "" {
+		like := "%" + query + "%"
+		db = db.Where("title LIKE ? OR url LIKE ? OR content_text LIKE ?", like, like, like)
+	}
+	if category != "" {
+		db = db.Where("category = ?", category)
+	}
+	if tag != "" {
+		db = db.Where("JSON_CONTAINS(tags_json, ?)", fmt.Sprintf("\"%s\"", tag))
+	}
+
+	if err := db.Order("created_at desc").Find(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "db query failed"})
 		return
 	}
@@ -125,6 +154,28 @@ func (s *Server) getArchive(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) updateArchive(c *gin.Context) {
+	var req UpdateArchiveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	tagsJSON, _ := json.Marshal(req.Tags)
+
+	if err := s.DB.Model(&models.Archive{}).
+		Where("id = ?", c.Param("id")).
+		Updates(map[string]any{
+			"category":  req.Category,
+			"tags_json": tagsJSON,
+		}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db update failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (s *Server) getArchiveHTML(c *gin.Context) {

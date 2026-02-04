@@ -1,6 +1,7 @@
 ﻿const statusEl = document.getElementById('status')
 const serverInput = document.getElementById('serverUrl')
 const captureBtn = document.getElementById('captureBtn')
+const selectBtn = document.getElementById('selectBtn')
 
 const setStatus = (msg) => {
   statusEl.textContent = msg
@@ -33,6 +34,41 @@ captureBtn.addEventListener('click', async () => {
     }
     if (!res || !res.ok) {
       setStatus(res?.error || '抓取失败')
+      return
+    }
+
+    try {
+      const response = await fetch(`${serverUrl}/api/archives`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(res.payload),
+      })
+      if (!response.ok) throw new Error('后端保存失败')
+      setStatus('归档成功')
+    } catch (err) {
+      setStatus(err.message || '请求失败')
+    }
+  })
+})
+
+selectBtn.addEventListener('click', async () => {
+  const serverUrl = serverInput.value.trim() || 'http://localhost:8080'
+  await saveServer(serverUrl)
+  setStatus('进入选区模式，点击页面元素...')
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (!tab || !tab.id) {
+    setStatus('未找到活动标签页')
+    return
+  }
+
+  chrome.tabs.sendMessage(tab.id, { type: 'select' }, async (res) => {
+    if (chrome.runtime.lastError) {
+      setStatus('内容脚本未响应，请刷新页面')
+      return
+    }
+    if (!res || !res.ok) {
+      setStatus(res?.error || '选区失败')
       return
     }
 
