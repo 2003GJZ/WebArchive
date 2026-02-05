@@ -1,89 +1,67 @@
-﻿const statusEl = document.getElementById('status')
+const statusEl = document.getElementById('status')
 const serverInput = document.getElementById('serverUrl')
 const captureBtn = document.getElementById('captureBtn')
 const selectBtn = document.getElementById('selectBtn')
+const categoryInput = document.getElementById('category')
+const tagsInput = document.getElementById('tags')
+const autoTagInput = document.getElementById('autoTag')
 
 const setStatus = (msg) => {
   statusEl.textContent = msg
 }
 
 const loadServer = async () => {
-  const data = await chrome.storage.sync.get(['serverUrl'])
+  const data = await chrome.storage.sync.get(['serverUrl', 'category', 'tags', 'autoTag', 'lastStatus'])
   serverInput.value = data.serverUrl || 'http://localhost:8080'
+  if (categoryInput) categoryInput.value = data.category || ''
+  if (tagsInput) tagsInput.value = data.tags || ''
+  if (autoTagInput) autoTagInput.checked = Boolean(data.autoTag)
+  if (data.lastStatus) setStatus(data.lastStatus)
 }
 
-const saveServer = async (value) => {
-  await chrome.storage.sync.set({ serverUrl: value })
+const saveSettings = async () => {
+  await chrome.storage.sync.set({
+    serverUrl: serverInput.value.trim(),
+    category: categoryInput?.value.trim() || '',
+    tags: tagsInput?.value.trim() || '',
+    autoTag: Boolean(autoTagInput?.checked),
+  })
+}
+
+const buildTags = () =>
+  (tagsInput?.value || '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+
+const sendToBackground = async (type) => {
+  await saveSettings()
+  captureBtn.disabled = true
+  selectBtn.disabled = true
+  chrome.runtime.sendMessage({
+    type,
+    serverUrl: serverInput.value.trim() || 'http://localhost:8080',
+    category: categoryInput?.value.trim() || '',
+    tags: buildTags(),
+    autoTag: Boolean(autoTagInput?.checked),
+  })
 }
 
 captureBtn.addEventListener('click', async () => {
-  const serverUrl = serverInput.value.trim() || 'http://localhost:8080'
-  await saveServer(serverUrl)
-  setStatus('正在抓取页面...')
-
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  if (!tab || !tab.id) {
-    setStatus('未找到活动标签页')
-    return
-  }
-
-  chrome.tabs.sendMessage(tab.id, { type: 'capture' }, async (res) => {
-    if (chrome.runtime.lastError) {
-      setStatus('内容脚本未响应，请刷新页面')
-      return
-    }
-    if (!res || !res.ok) {
-      setStatus(res?.error || '抓取失败')
-      return
-    }
-
-    try {
-      const response = await fetch(`${serverUrl}/api/archives`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(res.payload),
-      })
-      if (!response.ok) throw new Error('后端保存失败')
-      setStatus('归档成功')
-    } catch (err) {
-      setStatus(err.message || '请求失败')
-    }
-  })
+  setStatus('开始抓取，请稍候…')
+  await sendToBackground('start-capture')
 })
 
 selectBtn.addEventListener('click', async () => {
-  const serverUrl = serverInput.value.trim() || 'http://localhost:8080'
-  await saveServer(serverUrl)
-  setStatus('进入选区模式，点击页面元素...')
+  setStatus('进入选区模式，点击页面元素')
+  await sendToBackground('start-select')
+})
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  if (!tab || !tab.id) {
-    setStatus('未找到活动标签页')
-    return
-  }
-
-  chrome.tabs.sendMessage(tab.id, { type: 'select' }, async (res) => {
-    if (chrome.runtime.lastError) {
-      setStatus('内容脚本未响应，请刷新页面')
-      return
-    }
-    if (!res || !res.ok) {
-      setStatus(res?.error || '选区失败')
-      return
-    }
-
-    try {
-      const response = await fetch(`${serverUrl}/api/archives`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(res.payload),
-      })
-      if (!response.ok) throw new Error('后端保存失败')
-      setStatus('归档成功')
-    } catch (err) {
-      setStatus(err.message || '请求失败')
-    }
-  })
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.type !== 'capture-status') return
+  setStatus(msg.message || '')
+  captureBtn.disabled = false
+  selectBtn.disabled = false
 })
 
 loadServer()

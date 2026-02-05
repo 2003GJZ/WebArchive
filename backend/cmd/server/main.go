@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"webarchive/internal/ai"
 	"webarchive/internal/api"
 	"webarchive/internal/config"
 	"webarchive/internal/db"
@@ -27,11 +28,21 @@ func main() {
 	}
 
 	proc := processor.New(store, cfg.HTTPTimeout)
+	var llmClient *ai.Client
+	if cfg.LLMEnabled || cfg.LLMAPIKey != "" {
+		llmClient = ai.NewClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel, cfg.LLMTimeout)
+	}
 
 	r := gin.Default()
 	r.Use(corsMiddleware())
 
-	srv := &api.Server{DB: gdb, Store: store, Processor: proc}
+	srv := &api.Server{
+		DB:        gdb,
+		Store:     store,
+		Processor: proc,
+		LLM:       llmClient,
+		AutoTag:   cfg.AutoTagOnCapture,
+	}
 	srv.RegisterRoutes(r)
 
 	log.Printf("listening on %s", cfg.Addr)
@@ -43,7 +54,7 @@ func main() {
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

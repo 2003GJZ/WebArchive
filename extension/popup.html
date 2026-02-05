@@ -1,58 +1,141 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WebArchive</title>
     <style>
-      body {
-        font-family: "Segoe UI", sans-serif;
-        margin: 0;
-        padding: 16px;
-        width: 320px;
-        background: #f8f5f2;
+      :root {
+        color-scheme: light;
       }
-      h1 {
+      body {
+        font-family: "Segoe UI", "PingFang SC", sans-serif;
+        margin: 0;
+        padding: 14px;
+        width: 320px;
+        background: #f5f6f8;
+        color: #1c1f25;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 14px;
+        border: 1px solid rgba(30, 40, 70, 0.08);
+        box-shadow: 0 14px 30px rgba(25, 35, 60, 0.08);
+      }
+      .header {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+      .title {
+        font-weight: 700;
         font-size: 16px;
-        margin: 0 0 8px;
+      }
+      .subtitle {
+        font-size: 12px;
+        color: #6b7280;
       }
       label {
         display: block;
         font-size: 12px;
-        color: #666;
-        margin-bottom: 6px;
+        color: #667085;
+        margin: 10px 0 6px;
       }
-      input {
+      input[type="text"] {
         width: 100%;
         padding: 8px 10px;
-        border-radius: 8px;
-        border: 1px solid #ddd;
-        margin-bottom: 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(30, 40, 70, 0.12);
+        background: #f9fafb;
+        outline: none;
+      }
+      details {
+        margin-top: 8px;
+        border: 1px dashed rgba(30, 40, 70, 0.12);
+        border-radius: 12px;
+        padding: 8px 10px;
+        background: #fbfcff;
+      }
+      summary {
+        cursor: pointer;
+        font-size: 12px;
+        color: #475467;
+        list-style: none;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: #475467;
+        margin-top: 10px;
+      }
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
       }
       button {
         width: 100%;
-        padding: 10px;
+        padding: 10px 0;
         border-radius: 10px;
         border: none;
-        background: #ff6a3d;
-        color: white;
         font-weight: 600;
         cursor: pointer;
+      }
+      .primary {
+        background: #1f6feb;
+        color: #fff;
+      }
+      .secondary {
+        background: #eef2ff;
+        color: #1f2a44;
       }
       .status {
         margin-top: 10px;
         font-size: 12px;
-        color: #444;
+        color: #4b5563;
+        min-height: 16px;
       }
     </style>
   </head>
   <body>
-    <h1>WebArchive 采集</h1>
-    <label for="serverUrl">后端地址</label>
-    <input id="serverUrl" type="text" placeholder="http://localhost:8080" />
-    <button id="captureBtn">一键抓取</button>
-    <button id="selectBtn" style="margin-top:8px;background:#1f6feb;">选区抓取</button>
-    <div class="status" id="status"></div>
+    <div class="card">
+      <div class="header">
+        <div class="title">WebArchive</div>
+        <div class="subtitle">轻量采集 · 自动归档</div>
+      </div>
+
+      <label for="serverUrl">后端地址</label>
+      <input id="serverUrl" type="text" placeholder="http://localhost:8080" />
+
+      <details>
+        <summary>可选信息</summary>
+        <label for="category">分类（可选）</label>
+        <input id="category" type="text" placeholder="例如：技术 / 产品" />
+        <label for="tags">标签（可选，逗号分隔）</label>
+        <input id="tags" type="text" placeholder="go, 数据库, 架构" />
+      </details>
+
+      <label class="toggle">
+        <input id="autoTag" type="checkbox" />
+        使用 AI 自动分类
+      </label>
+
+      <div class="actions">
+        <button id="captureBtn" class="primary">一键抓取</button>
+        <button id="selectBtn" class="secondary">选区抓取</button>
+      </div>
+
+      <div class="status" id="status"></div>
+    </div>
+
     <script src="popup.js"></script>
   </body>
 </html>

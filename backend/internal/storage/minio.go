@@ -60,6 +60,19 @@ func (s *MinioStore) Get(ctx context.Context, objectPath string) (*minio.Object,
 	return s.Client.GetObject(ctx, s.Bucket, objectPath, minio.GetObjectOptions{})
 }
 
+func (s *MinioStore) RemovePrefix(ctx context.Context, prefix string) error {
+	opts := minio.ListObjectsOptions{Prefix: prefix, Recursive: true}
+	for obj := range s.Client.ListObjects(ctx, s.Bucket, opts) {
+		if obj.Err != nil {
+			return obj.Err
+		}
+		if err := s.Client.RemoveObject(ctx, s.Bucket, obj.Key, minio.RemoveObjectOptions{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func GuessContentType(filename string, fallback string) string {
 	if ext := path.Ext(filename); ext != "" {
 		if ct := mime.TypeByExtension(ext); ct != "" {
