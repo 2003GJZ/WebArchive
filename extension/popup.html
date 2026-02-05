@@ -58,14 +58,33 @@
         padding: 8px 10px;
         background: #fbfcff;
       }
+      details[open] {
+        border-color: #1f6feb;
+        background: #f0f7ff;
+      }
+      details.disabled {
+        opacity: 0.5;
+        pointer-events: none;
+      }
       summary {
         cursor: pointer;
         font-size: 12px;
         color: #475467;
         list-style: none;
+        user-select: none;
       }
       summary::-webkit-details-marker {
         display: none;
+      }
+      summary::before {
+        content: '▶';
+        display: inline-block;
+        margin-right: 6px;
+        font-size: 10px;
+        transition: transform 0.2s;
+      }
+      details[open] summary::before {
+        transform: rotate(90deg);
       }
       .toggle {
         display: flex;
@@ -74,6 +93,11 @@
         font-size: 12px;
         color: #475467;
         margin-top: 10px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .toggle input[type="checkbox"] {
+        cursor: pointer;
       }
       .actions {
         display: grid;
@@ -115,7 +139,12 @@
       <label for="serverUrl">后端地址</label>
       <input id="serverUrl" type="text" placeholder="http://localhost:8080" />
 
-      <details>
+      <label class="toggle">
+        <input id="enableOptional" type="checkbox" />
+        启用可选信息（分类/标签）
+      </label>
+
+      <details id="optionalDetails">
         <summary>可选信息</summary>
         <label for="category">分类（可选）</label>
         <input id="category" type="text" placeholder="例如：技术 / 产品" />
@@ -125,7 +154,7 @@
 
       <label class="toggle">
         <input id="autoTag" type="checkbox" />
-        使用 AI 自动分类
+        使用 AI 自动分类和打标签
       </label>
 
       <div class="actions">

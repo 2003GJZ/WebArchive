@@ -182,6 +182,8 @@ export default function App() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
+  const [batchMode, setBatchMode] = useState(false)
+  const [immersiveMode, setImmersiveMode] = useState(false)
   const [analysis, setAnalysis] = useState({
     running: false,
     lastRun: null,
@@ -311,6 +313,16 @@ export default function App() {
     loadArchives()
     loadAnalysisStatus(true)
   }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && immersiveMode) {
+        exitImmersiveMode()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [immersiveMode])
 
   useEffect(() => {
     if (!analysis?.running) return
@@ -449,6 +461,16 @@ export default function App() {
 
   const clearSelection = () => {
     setSelectedIds([])
+    setBatchMode(false)
+  }
+
+  const enterImmersiveMode = (item) => {
+    setSelected(item)
+    setImmersiveMode(true)
+  }
+
+  const exitImmersiveMode = () => {
+    setImmersiveMode(false)
   }
 
   const runAnalysisSelected = async () => {
@@ -490,13 +512,39 @@ export default function App() {
 
   return (
     <div className="app">
+      {immersiveMode && selected && (
+        <div className="immersive-reader">
+          <div className="immersive-header">
+            <div className="immersive-info">
+              <h1>{selected.title || '未命名页面'}</h1>
+              <div className="immersive-meta">
+                <span>{selected.siteName || '未知站点'}</span>
+                <span>•</span>
+                <span>{formatDateTime(selected.createdAt)}</span>
+              </div>
+            </div>
+            <div className="immersive-actions">
+              <a href={selected.url} target="_blank" rel="noreferrer" className="ghost small">
+                打开原文
+              </a>
+              <button type="button" className="ghost small" onClick={exitImmersiveMode}>
+                退出全屏 (ESC)
+              </button>
+            </div>
+          </div>
+          <iframe
+            title="immersive-content"
+            src={`${API_BASE}/api/archives/${selected.id}/html`}
+            className="immersive-content"
+          />
+        </div>
+      )}
       <header className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">WebArchive</p>
-          <h1>把有价值的网页，变成自己的离线知识库</h1>
+          <p className="eyebrow">WebArchive 知识库</p>
+          <h1>网页归档 · 知识图谱 · 智能分类</h1>
           <p className="subtext">
-            插件一键采集，后端自动归档，前端沉浸式预览与知识图谱。当前为单用户模式，兼容
-            Edge。
+            一键采集网页内容，AI 自动分类标注，构建个人知识体系
           </p>
         </div>
         <div className="stats">
@@ -532,27 +580,29 @@ export default function App() {
           <div className={`analysis-pill ${analysis?.running ? 'on' : ''}`}>
             <span className="dot" />
             <div className="analysis-meta">
-              <strong>知识构建</strong>
+              <strong>AI 分析</strong>
               <span>{analysisSummary}</span>
-              <em>已选 {selectedIds.length} 篇</em>
             </div>
             <div className="analysis-buttons">
-              <button
-                type="button"
-                className="ghost small"
-                onClick={runAnalysisSelected}
-                disabled={analysisLoading || analysis?.running || selectedIds.length === 0}
-              >
-                分析选中
-              </button>
-              <button
-                type="button"
-                className="primary small"
-                onClick={runAnalysisAll}
-                disabled={analysisLoading || analysis?.running}
-              >
-                分析全部
-              </button>
+              {selectedIds.length > 0 && batchMode ? (
+                <button
+                  type="button"
+                  className="primary small"
+                  onClick={runAnalysisSelected}
+                  disabled={analysisLoading || analysis?.running}
+                >
+                  分析 {selectedIds.length} 篇
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="primary small"
+                  onClick={runAnalysisAll}
+                  disabled={analysisLoading || analysis?.running}
+                >
+                  全部分析
+                </button>
+              )}
               {analysis?.running && (
                 <button type="button" className="ghost small" onClick={stopAnalysis}>
                   停止
@@ -698,31 +748,49 @@ export default function App() {
                 <p className="panel-sub">支持标题、站点、正文搜索</p>
               </div>
               <div className="list-actions">
-                <div className="selection-actions">
-                  <button type="button" className="ghost small" onClick={selectAll} disabled={items.length === 0}>
-                    全选
-                  </button>
-                  <button type="button" className="ghost small" onClick={clearSelection} disabled={selectedIds.length === 0}>
-                    清空
-                  </button>
-                </div>
-                <button type="button" className="ghost" onClick={loadArchives}>
-                  刷新
-                </button>
+                {batchMode ? (
+                  <>
+                    <div className="selection-actions">
+                      <button type="button" className="ghost small" onClick={selectAll} disabled={items.length === 0}>
+                        全选
+                      </button>
+                      <button type="button" className="ghost small" onClick={clearSelection} disabled={selectedIds.length === 0}>
+                        取消
+                      </button>
+                    </div>
+                    <span className="selection-count">{selectedIds.length} 项已选</span>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className="ghost small" onClick={() => setBatchMode(true)}>
+                      批量操作
+                    </button>
+                    <button type="button" className="ghost small" onClick={loadArchives}>
+                      刷新
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <div className="filters">
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索标题 / 站点 / 正文"
+                onKeyDown={(e) => e.key === 'Enter' && loadArchives()}
+                placeholder="🔍 搜索标题、站点或正文..."
               />
               <input
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && loadArchives()}
                 placeholder="分类"
               />
-              <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="标签" />
+              <input 
+                value={tag} 
+                onChange={(e) => setTag(e.target.value)} 
+                onKeyDown={(e) => e.key === 'Enter' && loadArchives()}
+                placeholder="标签" 
+              />
               <button type="button" className="primary" onClick={loadArchives}>
                 搜索
               </button>
@@ -733,31 +801,56 @@ export default function App() {
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className={`card ${selected?.id === item.id ? 'active' : ''}`}
-                  onClick={() => setSelected(item)}
+                  className={`card ${selected?.id === item.id ? 'active' : ''} ${selectedIds.includes(item.id) && batchMode ? 'checked' : ''}`}
+                  onClick={() => {
+                    if (batchMode) {
+                      toggleSelected(item.id)
+                    } else {
+                      setSelected(item)
+                    }
+                  }}
                 >
-                  <div className="card-select" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(item.id)}
-                      onChange={() => toggleSelected(item.id)}
-                      aria-label="选择归档"
-                    />
+                  {batchMode && (
+                    <div className="card-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(item.id)}
+                        onChange={() => toggleSelected(item.id)}
+                        aria-label="选择归档"
+                      />
+                    </div>
+                  )}
+                  <div className="card-content">
+                    <div className="card-title">{item.title || '未命名页面'}</div>
+                    <div className="card-meta">
+                      <span>{item.siteName || '未知站点'}</span>
+                      <span>•</span>
+                      <span>{formatDateTime(item.createdAt)}</span>
+                    </div>
+                    <div className="card-tags">
+                      {item.category && <span className="chip chip-accent">{item.category}</span>}
+                      {toTagList(item.tags).slice(0, 3).map((t) => (
+                        <span key={t} className="chip">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                  <div className="card-title">{item.title || '未命名页面'}</div>
-                  <div className="card-meta">
-                    <span>{item.siteName || '未知站点'}</span>
-                    <span>{formatDateTime(item.createdAt)}</span>
-                  </div>
-                  <div className="card-tags">
-                    {item.category && <span className="chip chip-accent">{item.category}</span>}
-                    {toTagList(item.tags).slice(0, 4).map((t) => (
-                      <span key={t} className="chip">
-                        #{t}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="card-url">{item.url}</div>
+                  {!batchMode && (
+                    <button
+                      type="button"
+                      className="card-immersive"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        enterImmersiveMode(item)
+                      }}
+                      title="全屏阅读"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/>
+                      </svg>
+                    </button>
+                  )}
                 </div>
               ))}
               {!loading && items.length === 0 && <div className="hint">暂无归档内容</div>}
@@ -772,17 +865,24 @@ export default function App() {
               </div>
               {selected && (
                 <div className="actions">
-                  <button type="button" className="ghost" onClick={() => setMetaOpen((v) => !v)}>
-                    {metaOpen ? '收起元信息' : '编辑元信息'}
+                  <button
+                    type="button"
+                    className="primary small"
+                    onClick={() => enterImmersiveMode(selected)}
+                  >
+                    全屏阅读
                   </button>
-                  <button type="button" className="ghost" onClick={runAiTag} disabled={aiLoading}>
-                    {aiLoading ? '生成中…' : 'AI 生成标签'}
+                  <button type="button" className="ghost small" onClick={() => setMetaOpen((v) => !v)}>
+                    {metaOpen ? '收起' : '编辑'}
                   </button>
-                  <button type="button" className="ghost danger" onClick={deleteArchive}>
+                  <button type="button" className="ghost small" onClick={runAiTag} disabled={aiLoading}>
+                    {aiLoading ? '生成中…' : 'AI 标签'}
+                  </button>
+                  <button type="button" className="ghost small danger" onClick={deleteArchive}>
                     删除
                   </button>
-                  <a href={selected.url} target="_blank" rel="noreferrer">
-                    打开原文
+                  <a href={selected.url} target="_blank" rel="noreferrer" className="ghost small">
+                    原文
                   </a>
                 </div>
               )}
@@ -819,12 +919,12 @@ export default function App() {
                 </button>
               </div>
             )}
-            {selected && (
+            {selected && (selected.category || toTagList(selected.tags).length > 0) && (
               <div className="chip-row">
                 {selected.category && <span className="chip chip-accent">{selected.category}</span>}
                 {toTagList(selected.tags).map((t) => (
                   <span key={t} className="chip">
-                    #{t}
+                    {t}
                   </span>
                 ))}
               </div>

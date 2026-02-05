@@ -28,7 +28,7 @@ const reportStatus = async (status, message) => {
 }
 
 const handleCapture = async (mode, options) => {
-  const { serverUrl, category, tags, autoTag } = options
+  const { serverUrl, category, tags, autoTag, enableOptional } = options
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tab || !tab.id) {
     setBadge('ERR', '#b00020')
@@ -50,8 +50,8 @@ const handleCapture = async (mode, options) => {
     try {
       const payload = {
         ...res.payload,
-        category: category || '',
-        tags: tags || [],
+        category: enableOptional ? (category || '') : '',
+        tags: enableOptional ? (tags || []) : [],
         autoTag: Boolean(autoTag),
       }
       await postArchive(serverUrl, payload)
