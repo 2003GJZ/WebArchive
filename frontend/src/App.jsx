@@ -48,220 +48,263 @@ const GraphView = ({ data, onNodeClick }) => {
         }
       }
 
-      if (!graphRef.current) {
-        // 基础配色方案
-        const baseColors = {
-          archive: '#667eea',
-          category: '#f093fb',
-          tag: '#4facfe',
-          path: '#43e97b',
-          taxonomy: '#fa709a',
-          entity: '#30cfd0',
-        }
-        
-        // 计算节点的连接数和动态大小
-        const getNodeSize = (node) => {
-          const links = (data?.links || []).filter(
-            link => {
-              const sourceId = typeof link.source === 'object' ? link.source.id : link.source
-              const targetId = typeof link.target === 'object' ? link.target.id : link.target
-              return sourceId === node.id || targetId === node.id
-            }
-          )
-          const connectionCount = links.length
-          const baseSize = {
-            archive: 5,
-            category: 4.5,
-            tag: 3.5,
-            path: 3,
-            taxonomy: 4.5,
-            entity: 4,
-          }[node.group] || 4
-          
-          // 根据连接数增加大小，最多增加 80%
-          return baseSize + Math.min(connectionCount * 0.3, baseSize * 0.8)
-        }
-        
-        // 计算节点的动态颜色
-        const getNodeColor = (node) => {
-          const links = (data?.links || []).filter(
-            link => {
-              const sourceId = typeof link.source === 'object' ? link.source.id : link.source
-              const targetId = typeof link.target === 'object' ? link.target.id : link.target
-              return sourceId === node.id || targetId === node.id
-            }
-          )
-          
-          if (links.length === 0) {
-            return baseColors[node.group] || '#667eea'
-          }
-          
-          // 收集所有连接节点的颜色
-          const connectedColors = []
-          links.forEach(link => {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target
-            const otherId = sourceId === node.id ? targetId : sourceId
-            const otherNode = (data?.nodes || []).find(n => n.id === otherId)
-            if (otherNode) {
-              connectedColors.push(baseColors[otherNode.group] || '#667eea')
-            }
-          })
-          
-          // 如果只有一个连接，使用该颜色的变体
-          if (connectedColors.length === 1) {
-            return connectedColors[0]
-          }
-          
-          // 多个连接，混合颜色
-          if (connectedColors.length > 1) {
-            return blendColors(connectedColors)
-          }
-          
-          return baseColors[node.group] || '#667eea'
-        }
-        
-        // 颜色混合函数
-        const blendColors = (colors) => {
-          if (colors.length === 0) return '#667eea'
-          if (colors.length === 1) return colors[0]
-          
-          let r = 0, g = 0, b = 0
-          colors.forEach(color => {
-            const hex = color.replace('#', '')
-            r += parseInt(hex.substr(0, 2), 16)
-            g += parseInt(hex.substr(2, 2), 16)
-            b += parseInt(hex.substr(4, 2), 16)
-          })
-          
-          r = Math.round(r / colors.length)
-          g = Math.round(g / colors.length)
-          b = Math.round(b / colors.length)
-          
-          return '#' + [r, g, b].map(x => {
-            const hex = x.toString(16)
-            return hex.length === 1 ? '0' + hex : hex
-          }).join('')
-        }
-        
-        graphRef.current = ForceGraph3D()(wrapRef.current)
-          .backgroundColor('#fafbfc')
-          .nodeLabel((node) => {
-            const connections = (data?.links || []).filter(
-              link => {
-                const sourceId = typeof link.source === 'object' ? link.source.id : link.source
-                const targetId = typeof link.target === 'object' ? link.target.id : link.target
-                return sourceId === node.id || targetId === node.id
-              }
-            ).length
-            const nodeColor = getNodeColor(node)
-            return `
-              <div style="
-                background: ${nodeColor};
-                color: white;
-                padding: 10px 14px;
-                border-radius: 10px;
-                font-size: 13px;
-                font-weight: 600;
-                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-                max-width: 220px;
-                word-wrap: break-word;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-              ">
-                <div>${node.label || ''}</div>
-                <div style="font-size: 11px; opacity: 0.9; margin-top: 4px;">
-                  ${connections} 个连接
-                </div>
-              </div>
-            `
-          })
-          .linkColor(() => 'rgba(102, 126, 234, 0.25)')
-          .linkOpacity(0.4)
-          .linkWidth((link) => (link.value || 1) * 0.8)
-          .linkDirectionalParticles(2)
-          .linkDirectionalParticleWidth(1.5)
-          .linkDirectionalParticleSpeed(0.003)
-          .nodeThreeObject((node) => {
-            const group = new THREE.Group()
-            const radius = getNodeSize(node)
-            const color = getNodeColor(node)
-            
-            // 创建发光球体
-            const geometry = new THREE.SphereGeometry(radius, 32, 32)
-            
-            // 主材质 - 更有光泽
-            const material = new THREE.MeshPhysicalMaterial({
-              color: color,
-              roughness: 0.2,
-              metalness: 0.3,
-              clearcoat: 1.0,
-              clearcoatRoughness: 0.1,
-              emissive: color,
-              emissiveIntensity: 0.3,
-            })
-            
-            const sphere = new THREE.Mesh(geometry, material)
-            
-            // 添加外发光效果
-            const glowGeometry = new THREE.SphereGeometry(radius * 1.3, 32, 32)
-            const glowMaterial = new THREE.MeshBasicMaterial({
-              color: color,
-              transparent: true,
-              opacity: 0.15,
-            })
-            const glow = new THREE.Mesh(glowGeometry, glowMaterial)
-            
-            group.add(glow)
-            group.add(sphere)
-            
-            // 文字标签 - 更清晰
-            const sprite = new SpriteText(node.label || '')
-            sprite.color = '#24292f'
-            sprite.textHeight = node.group === 'archive' ? 8 : 5.5
-            sprite.fontWeight = node.group === 'archive' ? '700' : '500'
-            sprite.position.set(0, radius + 4, 0)
-            sprite.backgroundColor = 'rgba(255, 255, 255, 0.9)'
-            sprite.padding = 2
-            sprite.borderRadius = 3
-            
-            group.add(sprite)
-            
-            return group
-          })
-          .onNodeClick((node) => onNodeClick?.(node))
-          .onNodeHover((node) => {
-            wrapRef.current.style.cursor = node ? 'pointer' : 'default'
-          })
+      const graphData = data && data.nodes ? data : { nodes: [], links: [] }
+      const nodeIndex = new Map(graphData.nodes.map((node) => [node.id, node]))
+      const adjacency = new Map()
+      const connect = (a, b) => {
+        if (!a || !b) return
+        if (!adjacency.has(a)) adjacency.set(a, new Set())
+        adjacency.get(a).add(b)
+      }
+      graphData.links.forEach((link) => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target
+        connect(sourceId, targetId)
+        connect(targetId, sourceId)
+      })
 
-        if (!graphRef.current.__lightsAdded) {
-          graphRef.current.__lightsAdded = true
-          
-          // 环境光 - 更柔和
-          graphRef.current.scene().add(new THREE.AmbientLight(0xffffff, 0.6))
-          
-          // 主光源
-          const mainLight = new THREE.DirectionalLight(0xffffff, 0.8)
-          mainLight.position.set(50, 50, 50)
-          graphRef.current.scene().add(mainLight)
-          
-          // 补光
-          const fillLight = new THREE.DirectionalLight(0xffffff, 0.4)
-          fillLight.position.set(-50, -50, -50)
-          graphRef.current.scene().add(fillLight)
-          
-          // 点光源 - 增加氛围
-          const pointLight = new THREE.PointLight(0x0969da, 0.5, 200)
-          pointLight.position.set(0, 50, 0)
-          graphRef.current.scene().add(pointLight)
+      const componentMap = new Map()
+      let componentIndex = 0
+      graphData.nodes.forEach((node) => {
+        if (componentMap.has(node.id)) return
+        const key = `comp-${componentIndex++}`
+        const stack = [node.id]
+        componentMap.set(node.id, key)
+        while (stack.length > 0) {
+          const current = stack.pop()
+          const neighbors = adjacency.get(current)
+          if (!neighbors) continue
+          neighbors.forEach((neighbor) => {
+            if (!componentMap.has(neighbor)) {
+              componentMap.set(neighbor, key)
+              stack.push(neighbor)
+            }
+          })
         }
-      } else {
-        graphRef.current.onNodeClick((node) => onNodeClick?.(node))
+      })
+
+      const palette = [
+        '#6f8df2',
+        '#f093fb',
+        '#4facfe',
+        '#43e97b',
+        '#fa709a',
+        '#30cfd0',
+        '#f9d423',
+        '#f5576c',
+        '#6dd5ed',
+        '#f77062',
+      ]
+      const hashString = (value) => {
+        if (!value) return 0
+        let hash = 0
+        for (let i = 0; i < value.length; i += 1) {
+          hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+        }
+        return hash
+      }
+      const colorForKey = (key) => {
+        const idx = hashString(String(key)) % palette.length
+        return palette[idx]
+      }
+      const blendColors = (colors) => {
+        if (!colors || colors.length === 0) return '#6f8df2'
+        if (colors.length === 1) return colors[0]
+        let r = 0
+        let g = 0
+        let b = 0
+        colors.forEach((color) => {
+          const hex = color.replace('#', '')
+          r += parseInt(hex.slice(0, 2), 16)
+          g += parseInt(hex.slice(2, 4), 16)
+          b += parseInt(hex.slice(4, 6), 16)
+        })
+        r = Math.round(r / colors.length)
+        g = Math.round(g / colors.length)
+        b = Math.round(b / colors.length)
+        return `#${[r, g, b]
+          .map((value) => {
+            const hex = value.toString(16)
+            return hex.length === 1 ? `0${hex}` : hex
+          })
+          .join('')}`
+      }
+      const withAlpha = (hex, alpha) => {
+        const clean = hex.replace('#', '')
+        const r = parseInt(clean.slice(0, 2), 16)
+        const g = parseInt(clean.slice(2, 4), 16)
+        const b = parseInt(clean.slice(4, 6), 16)
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`
+      }
+      const getColorKey = (node) =>
+        node?.root || node?.rootKey || node?.group || componentMap.get(node?.id) || node?.id || 'default'
+      const getNodeColor = (node) => {
+        if (!node) return '#6f8df2'
+        if (node.color) return node.color
+        const neighborIds = adjacency.get(node.id)
+        const keys = new Set()
+        if (neighborIds) {
+          neighborIds.forEach((neighborId) => {
+            const neighbor = nodeIndex.get(neighborId)
+            if (neighbor) {
+              keys.add(getColorKey(neighbor))
+            }
+          })
+        }
+        if (node.root) keys.add(node.root)
+        if (keys.size === 0) {
+          return colorForKey(getColorKey(node))
+        }
+        if (keys.size === 1) {
+          return colorForKey([...keys][0])
+        }
+        return blendColors([...keys].map((key) => colorForKey(key)))
+      }
+      const baseSizes = {
+        archive: 5,
+        category: 4.5,
+        tag: 3.5,
+        path: 3,
+        taxonomy: 4.5,
+        entity: 4,
+      }
+      const getNodeSize = (node) => {
+        const degree = adjacency.get(node?.id)?.size || 0
+        const baseSize = typeof node?.size === 'number' ? node.size : baseSizes[node?.group] || 4
+        const boost = Math.min(degree * 0.28, baseSize * 1.4)
+        return baseSize + boost
+      }
+      const getLinkColor = (link) => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target
+        const sourceNode = nodeIndex.get(sourceId)
+        const targetNode = nodeIndex.get(targetId)
+        if (!sourceNode || !targetNode) return 'rgba(148, 163, 184, 0.25)'
+        return withAlpha(blendColors([getNodeColor(sourceNode), getNodeColor(targetNode)]), 0.28)
       }
 
-      graphRef.current.graphData(data || { nodes: [], links: [] })
+      if (!graphRef.current) {
+        graphRef.current = ForceGraph3D()(wrapRef.current)
+          .backgroundColor('#fafbfc')
+          .linkOpacity(0.35)
+          .linkWidth((link) => (link.value || 1) * 0.7)
+          .linkDirectionalParticles(0)
+          .linkDirectionalParticleWidth(0)
+          .linkDirectionalParticleSpeed(0)
+          .cooldownTicks(120)
+          .d3VelocityDecay(0.45)
+      }
+
+      let hoverNode = null
+      const setHoverState = (node, active) => {
+        if (!node?.__threeObj?.userData) return
+        const { sphere, glow } = node.__threeObj.userData
+        if (sphere?.material && sphere.material.emissiveIntensity !== undefined) {
+          sphere.material.emissiveIntensity = active ? 0.65 : 0.28
+        }
+        if (glow?.material && glow.material.opacity !== undefined) {
+          glow.material.opacity = active ? 0.35 : 0.18
+        }
+      }
+
+      graphRef.current
+        .nodeLabel((node) => {
+          const connections = adjacency.get(node?.id)?.size || 0
+          const nodeColor = getNodeColor(node)
+          return `
+            <div style="
+              background: #0f172a;
+              color: white;
+              padding: 10px 12px;
+              border-radius: 10px;
+              font-size: 12px;
+              font-weight: 600;
+              box-shadow: 0 10px 24px rgba(15, 23, 42, 0.35);
+              border: 1px solid ${nodeColor};
+              max-width: 220px;
+            ">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:8px;height:8px;border-radius:999px;background:${nodeColor};display:inline-block;"></span>
+                <span>${node?.label || ''}</span>
+              </div>
+              <div style="font-size: 11px; opacity: 0.7; margin-top: 6px;">
+                ${connections} 个连接
+              </div>
+            </div>
+          `
+        })
+        .linkColor((link) => getLinkColor(link))
+        .nodeThreeObject((node) => {
+          const group = new THREE.Group()
+          const radius = getNodeSize(node)
+          const color = getNodeColor(node)
+
+          const geometry = new THREE.SphereGeometry(radius, 32, 32)
+          const material = new THREE.MeshPhysicalMaterial({
+            color,
+            roughness: 0.25,
+            metalness: 0.2,
+            clearcoat: 0.85,
+            clearcoatRoughness: 0.15,
+            emissive: color,
+            emissiveIntensity: 0.28,
+          })
+          const sphere = new THREE.Mesh(geometry, material)
+
+          const glowGeometry = new THREE.SphereGeometry(radius * 1.28, 32, 32)
+          const glowMaterial = new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.18,
+          })
+          const glow = new THREE.Mesh(glowGeometry, glowMaterial)
+
+          const sprite = new SpriteText(node?.label || '')
+          sprite.color = '#0f172a'
+          sprite.textHeight = node?.group === 'archive' ? 8 : 5.8
+          sprite.fontWeight = node?.group === 'archive' ? '700' : '500'
+          sprite.position.set(0, radius + 4, 0)
+          sprite.backgroundColor = 'rgba(255, 255, 255, 0.92)'
+          sprite.padding = 2
+          sprite.borderRadius = 3
+
+          group.add(glow)
+          group.add(sphere)
+          group.add(sprite)
+          group.userData = { sphere, glow }
+          return group
+        })
+        .onNodeClick((node) => onNodeClick?.(node))
+        .onNodeHover((node) => {
+          if (wrapRef.current) {
+            wrapRef.current.style.cursor = node ? 'pointer' : 'default'
+          }
+          if (hoverNode && hoverNode !== node) setHoverState(hoverNode, false)
+          if (node) setHoverState(node, true)
+          hoverNode = node
+        })
+
+      if (!graphRef.current.__lightsAdded) {
+        graphRef.current.__lightsAdded = true
+
+        graphRef.current.scene().add(new THREE.AmbientLight(0xffffff, 0.55))
+
+        const mainLight = new THREE.DirectionalLight(0xffffff, 0.75)
+        mainLight.position.set(50, 50, 50)
+        graphRef.current.scene().add(mainLight)
+
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.35)
+        fillLight.position.set(-50, -50, -50)
+        graphRef.current.scene().add(fillLight)
+
+        const pointLight = new THREE.PointLight(0x94a3b8, 0.35, 220)
+        pointLight.position.set(0, 50, 0)
+        graphRef.current.scene().add(pointLight)
+      }
+
+      graphRef.current.graphData(graphData)
       updateSize()
-      
-      // 只在初始化时自动缩放一次
+
       if (!graphRef.current.__initialZoom) {
         graphRef.current.__initialZoom = true
         setTimeout(() => {
@@ -344,21 +387,46 @@ const buildTaxonomyGraph = (tree) => {
   if (!Array.isArray(tree)) return { nodes: [], links: [] }
   const nodes = []
   const links = []
-  const add = (node, parentId) => {
+  const sizeMap = new Map()
+
+  const countDescendants = (node) => {
+    if (!node) return 0
+    let total = 1
+    if (Array.isArray(node.children)) {
+      node.children.forEach((child) => {
+        total += countDescendants(child)
+      })
+    }
+    sizeMap.set(node.id, total)
+    return total
+  }
+
+  tree.forEach((root) => countDescendants(root))
+
+  const sizeFor = (node) => {
+    const total = sizeMap.get(node.id) || 1
+    const scaled = 3 + Math.sqrt(total)
+    return Math.max(3.5, Math.min(10, scaled))
+  }
+
+  const add = (node, parentId, rootLabel) => {
+    const root = rootLabel || node.label
     nodes.push({
       id: `tax:${node.id}`,
       label: node.label,
       group: 'taxonomy',
       refId: node.id,
+      root,
+      size: sizeFor(node),
     })
     if (parentId) {
       links.push({ source: parentId, target: `tax:${node.id}`, value: 2 })
     }
     if (Array.isArray(node.children)) {
-      node.children.forEach((child) => add(child, `tax:${node.id}`))
+      node.children.forEach((child) => add(child, `tax:${node.id}`, root))
     }
   }
-  tree.forEach((root) => add(root, null))
+  tree.forEach((root) => add(root, null, null))
   return { nodes, links }
 }
 
