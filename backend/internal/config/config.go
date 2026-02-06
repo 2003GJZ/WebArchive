@@ -22,6 +22,7 @@ type Config struct {
 	LLMTimeout       time.Duration
 	LLMEnabled       bool
 	AutoTagOnCapture bool
+	EinoEnabled      bool
 }
 
 func Load() Config {
@@ -41,6 +42,7 @@ func Load() Config {
 		LLMTimeout:       time.Duration(getenvInt("LLM_TIMEOUT_SECONDS", 90)) * time.Second,
 		LLMEnabled:       getenvBool("LLM_ENABLED", false),
 		AutoTagOnCapture: getenvBool("AUTO_TAG_ON_CAPTURE", false),
+		EinoEnabled:      getenvBool("EINO_ENABLED", true),
 	}
 }
 

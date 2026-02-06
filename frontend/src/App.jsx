@@ -32,61 +32,304 @@ const GraphView = ({ data, onNodeClick }) => {
 
   useEffect(() => {
     let disposed = false
+    let resizeObserver = null
+    let resizeHandler = null
     const init = async () => {
-      const [{ default: ForceGraph3D }, { default: SpriteText }, { default: THREE }] =
+      const [{ default: ForceGraph3D }, { default: SpriteText }, THREE] =
         await Promise.all([import('3d-force-graph'), import('three-spritetext'), import('three')])
       if (disposed || !wrapRef.current) return
-      if (!graphRef.current) {
-        const colors = {
-          archive: '#6f8df2',
-          category: '#f0a46b',
-          tag: '#e9d5c6',
-          path: '#b1c3ff',
-          taxonomy: '#7ab7ff',
-        }
-        const sizes = {
-          archive: 6,
-          category: 5,
-          tag: 3.8,
-          path: 3.5,
-          taxonomy: 4.8,
-        }
-        graphRef.current = ForceGraph3D()(wrapRef.current)
-          .backgroundColor('#f7f8fb')
-          .nodeLabel('label')
-          .linkOpacity(0.35)
-          .linkWidth((link) => (link.value || 1) * 0.7)
-          .nodeThreeObject((node) => {
-            const group = new THREE.Group()
-            const radius = sizes[node.group] || 4
-            const material = new THREE.MeshStandardMaterial({
-              color: colors[node.group] || '#cbd2dd',
-              roughness: 0.35,
-              metalness: 0.05,
-            })
-            const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 24), material)
-            const sprite = new SpriteText(node.label || '')
-            sprite.color = node.group === 'archive' ? '#1f1f23' : '#5a5f6a'
-            sprite.textHeight = node.group === 'archive' ? 9 : 6
-            sprite.position.set(0, radius + 2, 0)
-            group.add(sphere)
-            group.add(sprite)
-            return group
-          })
-          .onNodeClick((node) => onNodeClick?.(node))
-        if (!graphRef.current.__lightsAdded) {
-          graphRef.current.__lightsAdded = true
-          graphRef.current.scene().add(new THREE.AmbientLight(0xffffff, 0.78))
-          const dirLight = new THREE.DirectionalLight(0xffffff, 0.68)
-          dirLight.position.set(30, 60, 20)
-          graphRef.current.scene().add(dirLight)
+
+      const updateSize = () => {
+        if (!wrapRef.current || !graphRef.current) return
+        const { clientWidth, clientHeight } = wrapRef.current
+        if (clientWidth > 0 && clientHeight > 0) {
+          graphRef.current.width(clientWidth)
+          graphRef.current.height(clientHeight)
         }
       }
-      graphRef.current.graphData(data || { nodes: [], links: [] })
+
+      const graphData = data && data.nodes ? data : { nodes: [], links: [] }
+      const nodeIndex = new Map(graphData.nodes.map((node) => [node.id, node]))
+      const adjacency = new Map()
+      const connect = (a, b) => {
+        if (!a || !b) return
+        if (!adjacency.has(a)) adjacency.set(a, new Set())
+        adjacency.get(a).add(b)
+      }
+      graphData.links.forEach((link) => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target
+        connect(sourceId, targetId)
+        connect(targetId, sourceId)
+      })
+
+      const componentMap = new Map()
+      let componentIndex = 0
+      graphData.nodes.forEach((node) => {
+        if (componentMap.has(node.id)) return
+        const key = `comp-${componentIndex++}`
+        const stack = [node.id]
+        componentMap.set(node.id, key)
+        while (stack.length > 0) {
+          const current = stack.pop()
+          const neighbors = adjacency.get(current)
+          if (!neighbors) continue
+          neighbors.forEach((neighbor) => {
+            if (!componentMap.has(neighbor)) {
+              componentMap.set(neighbor, key)
+              stack.push(neighbor)
+            }
+          })
+        }
+      })
+
+      const palette = [
+        '#6f8df2',
+        '#f093fb',
+        '#4facfe',
+        '#43e97b',
+        '#fa709a',
+        '#30cfd0',
+        '#f9d423',
+        '#f5576c',
+        '#6dd5ed',
+        '#f77062',
+      ]
+      const hashString = (value) => {
+        if (!value) return 0
+        let hash = 0
+        for (let i = 0; i < value.length; i += 1) {
+          hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+        }
+        return hash
+      }
+      const colorForKey = (key) => {
+        const idx = hashString(String(key)) % palette.length
+        return palette[idx]
+      }
+      const blendColors = (colors) => {
+        if (!colors || colors.length === 0) return '#6f8df2'
+        if (colors.length === 1) return colors[0]
+        let r = 0
+        let g = 0
+        let b = 0
+        colors.forEach((color) => {
+          const hex = color.replace('#', '')
+          r += parseInt(hex.slice(0, 2), 16)
+          g += parseInt(hex.slice(2, 4), 16)
+          b += parseInt(hex.slice(4, 6), 16)
+        })
+        r = Math.round(r / colors.length)
+        g = Math.round(g / colors.length)
+        b = Math.round(b / colors.length)
+        return `#${[r, g, b]
+          .map((value) => {
+            const hex = value.toString(16)
+            return hex.length === 1 ? `0${hex}` : hex
+          })
+          .join('')}`
+      }
+      const withAlpha = (hex, alpha) => {
+        const clean = hex.replace('#', '')
+        const r = parseInt(clean.slice(0, 2), 16)
+        const g = parseInt(clean.slice(2, 4), 16)
+        const b = parseInt(clean.slice(4, 6), 16)
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`
+      }
+      const getColorKey = (node) =>
+        node?.root || node?.rootKey || node?.group || componentMap.get(node?.id) || node?.id || 'default'
+      const getNodeColor = (node) => {
+        if (!node) return '#6f8df2'
+        if (node.color) return node.color
+        const neighborIds = adjacency.get(node.id)
+        const keys = new Set()
+        if (neighborIds) {
+          neighborIds.forEach((neighborId) => {
+            const neighbor = nodeIndex.get(neighborId)
+            if (neighbor) {
+              keys.add(getColorKey(neighbor))
+            }
+          })
+        }
+        if (node.root) keys.add(node.root)
+        if (keys.size === 0) {
+          return colorForKey(getColorKey(node))
+        }
+        if (keys.size === 1) {
+          return colorForKey([...keys][0])
+        }
+        return blendColors([...keys].map((key) => colorForKey(key)))
+      }
+      const baseSizes = {
+        archive: 5,
+        category: 4.5,
+        tag: 3.5,
+        path: 3,
+        taxonomy: 4.5,
+        entity: 4,
+      }
+      const getNodeSize = (node) => {
+        const degree = adjacency.get(node?.id)?.size || 0
+        const baseSize = typeof node?.size === 'number' ? node.size : baseSizes[node?.group] || 4
+        const boost = Math.min(degree * 0.28, baseSize * 1.4)
+        return baseSize + boost
+      }
+      const getLinkColor = (link) => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target
+        const sourceNode = nodeIndex.get(sourceId)
+        const targetNode = nodeIndex.get(targetId)
+        if (!sourceNode || !targetNode) return 'rgba(148, 163, 184, 0.25)'
+        return withAlpha(blendColors([getNodeColor(sourceNode), getNodeColor(targetNode)]), 0.28)
+      }
+
+      if (!graphRef.current) {
+        graphRef.current = ForceGraph3D()(wrapRef.current)
+          .backgroundColor('#fafbfc')
+          .linkOpacity(0.35)
+          .linkWidth((link) => (link.value || 1) * 0.7)
+          .linkDirectionalParticles(0)
+          .linkDirectionalParticleWidth(0)
+          .linkDirectionalParticleSpeed(0)
+          .cooldownTicks(120)
+          .d3VelocityDecay(0.45)
+      }
+
+      let hoverNode = null
+      const setHoverState = (node, active) => {
+        if (!node?.__threeObj?.userData) return
+        const { sphere, glow } = node.__threeObj.userData
+        if (sphere?.material && sphere.material.emissiveIntensity !== undefined) {
+          sphere.material.emissiveIntensity = active ? 0.65 : 0.28
+        }
+        if (glow?.material && glow.material.opacity !== undefined) {
+          glow.material.opacity = active ? 0.35 : 0.18
+        }
+      }
+
+      graphRef.current
+        .nodeLabel((node) => {
+          const connections = adjacency.get(node?.id)?.size || 0
+          const nodeColor = getNodeColor(node)
+          return `
+            <div style="
+              background: #0f172a;
+              color: white;
+              padding: 10px 12px;
+              border-radius: 10px;
+              font-size: 12px;
+              font-weight: 600;
+              box-shadow: 0 10px 24px rgba(15, 23, 42, 0.35);
+              border: 1px solid ${nodeColor};
+              max-width: 220px;
+            ">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:8px;height:8px;border-radius:999px;background:${nodeColor};display:inline-block;"></span>
+                <span>${node?.label || ''}</span>
+              </div>
+              <div style="font-size: 11px; opacity: 0.7; margin-top: 6px;">
+                ${connections} 个连接
+              </div>
+            </div>
+          `
+        })
+        .linkColor((link) => getLinkColor(link))
+        .nodeThreeObject((node) => {
+          const group = new THREE.Group()
+          const radius = getNodeSize(node)
+          const color = getNodeColor(node)
+
+          const geometry = new THREE.SphereGeometry(radius, 32, 32)
+          const material = new THREE.MeshPhysicalMaterial({
+            color,
+            roughness: 0.25,
+            metalness: 0.2,
+            clearcoat: 0.85,
+            clearcoatRoughness: 0.15,
+            emissive: color,
+            emissiveIntensity: 0.28,
+          })
+          const sphere = new THREE.Mesh(geometry, material)
+
+          const glowGeometry = new THREE.SphereGeometry(radius * 1.28, 32, 32)
+          const glowMaterial = new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.18,
+          })
+          const glow = new THREE.Mesh(glowGeometry, glowMaterial)
+
+          const sprite = new SpriteText(node?.label || '')
+          sprite.color = '#0f172a'
+          sprite.textHeight = node?.group === 'archive' ? 8 : 5.8
+          sprite.fontWeight = node?.group === 'archive' ? '700' : '500'
+          sprite.position.set(0, radius + 4, 0)
+          sprite.backgroundColor = 'rgba(255, 255, 255, 0.92)'
+          sprite.padding = 2
+          sprite.borderRadius = 3
+
+          group.add(glow)
+          group.add(sphere)
+          group.add(sprite)
+          group.userData = { sphere, glow }
+          return group
+        })
+        .onNodeClick((node) => onNodeClick?.(node))
+        .onNodeHover((node) => {
+          if (wrapRef.current) {
+            wrapRef.current.style.cursor = node ? 'pointer' : 'default'
+          }
+          if (hoverNode && hoverNode !== node) setHoverState(hoverNode, false)
+          if (node) setHoverState(node, true)
+          hoverNode = node
+        })
+
+      if (!graphRef.current.__lightsAdded) {
+        graphRef.current.__lightsAdded = true
+
+        graphRef.current.scene().add(new THREE.AmbientLight(0xffffff, 0.55))
+
+        const mainLight = new THREE.DirectionalLight(0xffffff, 0.75)
+        mainLight.position.set(50, 50, 50)
+        graphRef.current.scene().add(mainLight)
+
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.35)
+        fillLight.position.set(-50, -50, -50)
+        graphRef.current.scene().add(fillLight)
+
+        const pointLight = new THREE.PointLight(0x94a3b8, 0.35, 220)
+        pointLight.position.set(0, 50, 0)
+        graphRef.current.scene().add(pointLight)
+      }
+
+      graphRef.current.graphData(graphData)
+      updateSize()
+
+      if (!graphRef.current.__initialZoom) {
+        graphRef.current.__initialZoom = true
+        setTimeout(() => {
+          graphRef.current.zoomToFit(600, 40)
+        }, 100)
+      }
+
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => updateSize())
+        resizeObserver.observe(wrapRef.current)
+      } else {
+        resizeHandler = () => updateSize()
+        window.addEventListener('resize', resizeHandler)
+      }
     }
     init()
+
     return () => {
       disposed = true
+      if (resizeObserver && wrapRef.current) {
+        resizeObserver.unobserve(wrapRef.current)
+        resizeObserver.disconnect()
+      } else if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler)
+      }
     }
   }, [data, onNodeClick])
 
@@ -144,21 +387,46 @@ const buildTaxonomyGraph = (tree) => {
   if (!Array.isArray(tree)) return { nodes: [], links: [] }
   const nodes = []
   const links = []
-  const add = (node, parentId) => {
+  const sizeMap = new Map()
+
+  const countDescendants = (node) => {
+    if (!node) return 0
+    let total = 1
+    if (Array.isArray(node.children)) {
+      node.children.forEach((child) => {
+        total += countDescendants(child)
+      })
+    }
+    sizeMap.set(node.id, total)
+    return total
+  }
+
+  tree.forEach((root) => countDescendants(root))
+
+  const sizeFor = (node) => {
+    const total = sizeMap.get(node.id) || 1
+    const scaled = 3 + Math.sqrt(total)
+    return Math.max(3.5, Math.min(10, scaled))
+  }
+
+  const add = (node, parentId, rootLabel) => {
+    const root = rootLabel || node.label
     nodes.push({
       id: `tax:${node.id}`,
       label: node.label,
       group: 'taxonomy',
       refId: node.id,
+      root,
+      size: sizeFor(node),
     })
     if (parentId) {
       links.push({ source: parentId, target: `tax:${node.id}`, value: 2 })
     }
     if (Array.isArray(node.children)) {
-      node.children.forEach((child) => add(child, `tax:${node.id}`))
+      node.children.forEach((child) => add(child, `tax:${node.id}`, root))
     }
   }
-  tree.forEach((root) => add(root, null))
+  tree.forEach((root) => add(root, null, null))
   return { nodes, links }
 }
 
@@ -226,9 +494,15 @@ export default function App() {
     }
   }
 
-  const loadGraph = async () => {
+  const loadGraph = async (mode = '') => {
     try {
-      const res = await fetch(`${API_BASE}/api/graph`)
+      let query = ''
+      if (mode === 'knowledge') {
+        query = '?mode=knowledge&limit=400&archives=160'
+      } else if (mode) {
+        query = `?mode=${mode}`
+      }
+      const res = await fetch(`${API_BASE}/api/graph${query}`)
       if (!res.ok) throw new Error('图谱加载失败')
       const data = await res.json()
       setGraphData(data)
@@ -343,6 +617,7 @@ export default function App() {
   useEffect(() => {
     if (view !== 'graph') return
     if (graphMode === 'global') loadGraph()
+    if (graphMode === 'knowledge') loadGraph('knowledge')
     if (graphMode === 'taxonomy') loadTaxonomy()
   }, [view, graphMode])
 
@@ -519,7 +794,7 @@ export default function App() {
               <h1>{selected.title || '未命名页面'}</h1>
               <div className="immersive-meta">
                 <span>{selected.siteName || '未知站点'}</span>
-                <span>•</span>
+                <span>·</span>
                 <span>{formatDateTime(selected.createdAt)}</span>
               </div>
             </div>
@@ -528,7 +803,7 @@ export default function App() {
                 打开原文
               </a>
               <button type="button" className="ghost small" onClick={exitImmersiveMode}>
-                退出全屏 (ESC)
+                退出全屏(ESC)
               </button>
             </div>
           </div>
@@ -556,19 +831,19 @@ export default function App() {
           </div>
           <div className="brand-text">
             <h1>WebArchive</h1>
-            <p className="brand-slogan">存住价值 · 连成逻辑 · 构建体系</p>
+            <p className="brand-slogan">存住价值 · 连接逻辑 · 构建体系</p>
           </div>
         </div>
         <div className="stats">
           <div className="stat-item">
-            <div className="stat-icon">📚</div>
+            <div className="stat-icon">📌</div>
             <div className="stat-content">
               <span className="stat-value">{stats.total}</span>
               <span className="stat-label">归档数量</span>
             </div>
           </div>
           <div className="stat-item">
-            <div className="stat-icon">⚡</div>
+            <div className="stat-icon">🕘</div>
             <div className="stat-content">
               <span className="stat-value">{stats.latest}</span>
               <span className="stat-label">最近更新</span>
@@ -584,14 +859,14 @@ export default function App() {
             className={view === 'list' ? 'tab active' : 'tab'}
             onClick={() => setView('list')}
           >
-            列表视图
+            📋 列表视图
           </button>
           <button
             type="button"
             className={view === 'graph' ? 'tab active' : 'tab'}
             onClick={() => setView('graph')}
           >
-            知识星球
+            🌌 知识星球
           </button>
         </div>
         <div className="toolbar-actions">
@@ -629,10 +904,7 @@ export default function App() {
             </div>
           </div>
           <button type="button" className="ghost" onClick={() => setAiOpen(true)}>
-            AI 设置
-          </button>
-          <button type="button" className="ghost" onClick={loadArchives}>
-            刷新
+            ⚙️ AI 设置
           </button>
         </div>
       </div>
@@ -642,7 +914,7 @@ export default function App() {
           <div className="panel-header">
             <div>
               <h2>知识图谱</h2>
-              <p className="panel-sub">点击节点查看子分类或相关文章</p>
+              <p className="panel-sub">3D 可视化知识网络，点击节点查看详情</p>
             </div>
             <div className="graph-controls">
               <button
@@ -650,22 +922,51 @@ export default function App() {
                 className={graphMode === 'taxonomy' ? 'tab active' : 'tab'}
                 onClick={() => setGraphMode('taxonomy')}
               >
-                体系
+                🏗️ 体系
               </button>
               <button
                 type="button"
                 className={graphMode === 'focus' ? 'tab active' : 'tab'}
                 onClick={() => setGraphMode('focus')}
               >
-                聚焦
+                🎯 聚焦
+              </button>
+              <button
+                type="button"
+                className={graphMode === 'knowledge' ? 'tab active' : 'tab'}
+                onClick={() => setGraphMode('knowledge')}
+              >
+                📚 知识
               </button>
               <button
                 type="button"
                 className={graphMode === 'global' ? 'tab active' : 'tab'}
                 onClick={() => setGraphMode('global')}
               >
-                全局
+                🌍 全局
               </button>
+            </div>
+          </div>
+          <div className="graph-legend">
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#667eea' }}></span>
+              <span>归档文章</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#f093fb' }}></span>
+              <span>分类</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#4facfe' }}></span>
+              <span>标签</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#43e97b' }}></span>
+              <span>路径</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#fa709a' }}></span>
+              <span>分类体系</span>
             </div>
           </div>
           <div className="graph-layout">
@@ -749,9 +1050,7 @@ export default function App() {
                   )}
                 </>
               )}
-              {graphMode !== 'taxonomy' && (
-                <div className="hint">切换到“体系”查看层级分类</div>
-              )}
+              {graphMode !== 'taxonomy' && <div className="hint">切换到“体系”查看层级分类</div>}
             </aside>
           </div>
         </section>
@@ -763,28 +1062,31 @@ export default function App() {
             <div className="panel-header">
               <div>
                 <h2>归档列表</h2>
-                <p className="panel-sub">支持标题、站点、正文搜索</p>
+                <p className="panel-sub">共 {items.length} 篇归档</p>
               </div>
               <div className="list-actions">
                 {batchMode ? (
                   <>
+                    <span className="selection-count">{selectedIds.length} 项已选</span>
                     <div className="selection-actions">
                       <button type="button" className="ghost small" onClick={selectAll} disabled={items.length === 0}>
                         全选
                       </button>
                       <button type="button" className="ghost small" onClick={clearSelection} disabled={selectedIds.length === 0}>
-                        取消
+                        清空
+                      </button>
+                      <button type="button" className="ghost small" onClick={() => { setBatchMode(false); clearSelection(); }}>
+                        退出
                       </button>
                     </div>
-                    <span className="selection-count">{selectedIds.length} 项已选</span>
                   </>
                 ) : (
                   <>
                     <button type="button" className="ghost small" onClick={() => setBatchMode(true)}>
-                      批量操作
+                      ☑️ 批量操作
                     </button>
                     <button type="button" className="ghost small" onClick={loadArchives}>
-                      刷新
+                      🔄 刷新
                     </button>
                   </>
                 )}
@@ -803,11 +1105,11 @@ export default function App() {
                 onKeyDown={(e) => e.key === 'Enter' && loadArchives()}
                 placeholder="分类"
               />
-              <input 
-                value={tag} 
-                onChange={(e) => setTag(e.target.value)} 
+              <input
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && loadArchives()}
-                placeholder="标签" 
+                placeholder="标签"
               />
               <button type="button" className="primary" onClick={loadArchives}>
                 搜索
@@ -842,7 +1144,7 @@ export default function App() {
                     <div className="card-title">{item.title || '未命名页面'}</div>
                     <div className="card-meta">
                       <span>{item.siteName || '未知站点'}</span>
-                      <span>•</span>
+                      <span>·</span>
                       <span>{formatDateTime(item.createdAt)}</span>
                     </div>
                     <div className="card-tags">
@@ -883,11 +1185,7 @@ export default function App() {
               </div>
               {selected && (
                 <div className="actions">
-                  <button
-                    type="button"
-                    className="primary small"
-                    onClick={() => enterImmersiveMode(selected)}
-                  >
+                  <button type="button" className="primary small" onClick={() => enterImmersiveMode(selected)}>
                     全屏阅读
                   </button>
                   <button type="button" className="ghost small" onClick={() => setMetaOpen((v) => !v)}>
@@ -929,7 +1227,7 @@ export default function App() {
                     rows={2}
                     value={form.hierarchy}
                     onChange={(e) => setForm((s) => ({ ...s, hierarchy: e.target.value }))}
-                    placeholder={'例如：计算机/网络/TCP\n计算机/网络/UDP/HTTP3'}
+                    placeholder={'例如：计算机/网络/TCP\n计算机网络/UDP/HTTP3'}
                   />
                 </div>
                 <button type="button" className="primary" disabled={!selected || saving} onClick={saveMeta}>
@@ -948,9 +1246,7 @@ export default function App() {
               </div>
             )}
             {!selected && <div className="hint">选择左侧内容即可预览</div>}
-            {selected && (
-              <iframe title="archive-preview" src={`${API_BASE}/api/archives/${selected.id}/html`} />
-            )}
+            {selected && <iframe title="archive-preview" src={`${API_BASE}/api/archives/${selected.id}/html`} />}
           </section>
         </main>
       )}

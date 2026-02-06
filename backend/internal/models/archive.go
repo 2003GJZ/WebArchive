@@ -18,6 +18,9 @@ type Archive struct {
 	TagsJSON      datatypes.JSON `gorm:"type:json" json:"tags"`
 	HierarchyJSON datatypes.JSON `gorm:"type:json" json:"hierarchy"`
 	HierarchyPath string         `gorm:"size:512;index" json:"hierarchyPath"`
+	EntitiesJSON  datatypes.JSON `gorm:"type:json" json:"entities"`
+	RelationsJSON datatypes.JSON `gorm:"type:json" json:"relations"`
+	Summary       string         `gorm:"type:text" json:"summary"`
 	ContentText   string         `gorm:"type:longtext" json:"contentText,omitempty"`
 	CapturedAt    *time.Time     `json:"capturedAt"`
 	HTMLPath      string         `gorm:"size:1024" json:"htmlPath"`
