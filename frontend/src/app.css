@@ -56,6 +56,30 @@
   box-sizing: border-box;
 }
 
+/* 美化滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-light);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--bg);
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -63,12 +87,15 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  height: 100vh;
 }
 
 .app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .hero {
@@ -179,6 +206,7 @@ body {
   gap: 0;
   flex: 1;
   overflow: hidden;
+  height: 100%;
 }
 
 .toolbar {
@@ -319,6 +347,7 @@ body {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  height: 100%;
 }
 
 .list-panel {
@@ -333,6 +362,7 @@ body {
   padding: 16px 20px;
   border-bottom: 1px solid var(--line-light);
   background: var(--bg);
+  flex-shrink: 0;
 }
 
 .list-actions {
@@ -344,13 +374,17 @@ body {
 .selection-actions {
   display: inline-flex;
   gap: 6px;
+  align-items: center;
 }
 
 .selection-count {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--accent);
   font-weight: 600;
-  padding: 0 8px;
+  padding: 6px 12px;
+  background: var(--accent-soft);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent);
 }
 
 .panel-header h2 {
@@ -381,6 +415,7 @@ body {
   padding: 12px 20px;
   background: var(--panel);
   border-bottom: 1px solid var(--line-light);
+  flex-shrink: 0;
 }
 
 .filters input {
@@ -512,11 +547,14 @@ button:disabled {
   flex-direction: column;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
 
 .card-wrapper {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .card {
@@ -568,11 +606,40 @@ button:disabled {
   padding-top: 2px;
 }
 
-.card-select input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
+.card-select input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
   cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.card-select input[type="checkbox"]:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.card-select input[type="checkbox"]:checked {
+  background: var(--accent-gradient);
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(9, 105, 218, 0.3);
+}
+
+.card-select input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 .card-content {
@@ -712,6 +779,8 @@ button:disabled {
 .preview-panel {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 .preview-panel iframe {
@@ -719,6 +788,7 @@ button:disabled {
   width: 100%;
   border: none;
   background: var(--panel);
+  min-height: 0;
 }
 
 .graph-panel {
@@ -814,6 +884,7 @@ button:disabled {
   padding: 16px 20px;
   background: var(--bg);
   border-bottom: 1px solid var(--line-light);
+  flex-shrink: 0;
 }
 
 .meta-panel > div {

@@ -859,14 +859,14 @@ export default function App() {
             className={view === 'list' ? 'tab active' : 'tab'}
             onClick={() => setView('list')}
           >
-            列表视图
+            📋 列表视图
           </button>
           <button
             type="button"
             className={view === 'graph' ? 'tab active' : 'tab'}
             onClick={() => setView('graph')}
           >
-            知识星球
+            🌌 知识星球
           </button>
         </div>
         <div className="toolbar-actions">
@@ -904,10 +904,7 @@ export default function App() {
             </div>
           </div>
           <button type="button" className="ghost" onClick={() => setAiOpen(true)}>
-            AI 设置
-          </button>
-          <button type="button" className="ghost" onClick={loadArchives}>
-            刷新
+            ⚙️ AI 设置
           </button>
         </div>
       </div>
@@ -1065,28 +1062,31 @@ export default function App() {
             <div className="panel-header">
               <div>
                 <h2>归档列表</h2>
-                <p className="panel-sub">支持标题、站点、正文搜索</p>
+                <p className="panel-sub">共 {items.length} 篇归档</p>
               </div>
               <div className="list-actions">
                 {batchMode ? (
                   <>
+                    <span className="selection-count">{selectedIds.length} 项已选</span>
                     <div className="selection-actions">
                       <button type="button" className="ghost small" onClick={selectAll} disabled={items.length === 0}>
                         全选
                       </button>
                       <button type="button" className="ghost small" onClick={clearSelection} disabled={selectedIds.length === 0}>
-                        取消
+                        清空
+                      </button>
+                      <button type="button" className="ghost small" onClick={() => { setBatchMode(false); clearSelection(); }}>
+                        退出
                       </button>
                     </div>
-                    <span className="selection-count">{selectedIds.length} 项已选</span>
                   </>
                 ) : (
                   <>
                     <button type="button" className="ghost small" onClick={() => setBatchMode(true)}>
-                      批量操作
+                      ☑️ 批量操作
                     </button>
                     <button type="button" className="ghost small" onClick={loadArchives}>
-                      刷新
+                      🔄 刷新
                     </button>
                   </>
                 )}
