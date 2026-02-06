@@ -49,45 +49,133 @@ const GraphView = ({ data, onNodeClick }) => {
       }
 
       if (!graphRef.current) {
-        // 现代化配色方案
-        const colors = {
-          archive: '#0969da',      // 主要节点 - 蓝色
-          category: '#8250df',     // 分类 - 紫色
-          tag: '#1f883d',          // 标签 - 绿色
-          path: '#bf8700',         // 路径 - 橙色
-          taxonomy: '#cf222e',     // 分类体系 - 红色
-          entity: '#0969da',       // 实体 - 蓝色
+        // 基础配色方案
+        const baseColors = {
+          archive: '#667eea',
+          category: '#f093fb',
+          tag: '#4facfe',
+          path: '#43e97b',
+          taxonomy: '#fa709a',
+          entity: '#30cfd0',
         }
         
-        // 节点大小
-        const sizes = {
-          archive: 7,
-          category: 6,
-          tag: 4.5,
-          path: 4,
-          taxonomy: 5.5,
-          entity: 5,
+        // 计算节点的连接数和动态大小
+        const getNodeSize = (node) => {
+          const links = (data?.links || []).filter(
+            link => {
+              const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+              const targetId = typeof link.target === 'object' ? link.target.id : link.target
+              return sourceId === node.id || targetId === node.id
+            }
+          )
+          const connectionCount = links.length
+          const baseSize = {
+            archive: 5,
+            category: 4.5,
+            tag: 3.5,
+            path: 3,
+            taxonomy: 4.5,
+            entity: 4,
+          }[node.group] || 4
+          
+          // 根据连接数增加大小，最多增加 80%
+          return baseSize + Math.min(connectionCount * 0.3, baseSize * 0.8)
+        }
+        
+        // 计算节点的动态颜色
+        const getNodeColor = (node) => {
+          const links = (data?.links || []).filter(
+            link => {
+              const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+              const targetId = typeof link.target === 'object' ? link.target.id : link.target
+              return sourceId === node.id || targetId === node.id
+            }
+          )
+          
+          if (links.length === 0) {
+            return baseColors[node.group] || '#667eea'
+          }
+          
+          // 收集所有连接节点的颜色
+          const connectedColors = []
+          links.forEach(link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target
+            const otherId = sourceId === node.id ? targetId : sourceId
+            const otherNode = (data?.nodes || []).find(n => n.id === otherId)
+            if (otherNode) {
+              connectedColors.push(baseColors[otherNode.group] || '#667eea')
+            }
+          })
+          
+          // 如果只有一个连接，使用该颜色的变体
+          if (connectedColors.length === 1) {
+            return connectedColors[0]
+          }
+          
+          // 多个连接，混合颜色
+          if (connectedColors.length > 1) {
+            return blendColors(connectedColors)
+          }
+          
+          return baseColors[node.group] || '#667eea'
+        }
+        
+        // 颜色混合函数
+        const blendColors = (colors) => {
+          if (colors.length === 0) return '#667eea'
+          if (colors.length === 1) return colors[0]
+          
+          let r = 0, g = 0, b = 0
+          colors.forEach(color => {
+            const hex = color.replace('#', '')
+            r += parseInt(hex.substr(0, 2), 16)
+            g += parseInt(hex.substr(2, 2), 16)
+            b += parseInt(hex.substr(4, 2), 16)
+          })
+          
+          r = Math.round(r / colors.length)
+          g = Math.round(g / colors.length)
+          b = Math.round(b / colors.length)
+          
+          return '#' + [r, g, b].map(x => {
+            const hex = x.toString(16)
+            return hex.length === 1 ? '0' + hex : hex
+          }).join('')
         }
         
         graphRef.current = ForceGraph3D()(wrapRef.current)
           .backgroundColor('#fafbfc')
-          .nodeLabel((node) => `
-            <div style="
-              background: rgba(13, 17, 23, 0.95);
-              color: white;
-              padding: 8px 12px;
-              border-radius: 8px;
-              font-size: 12px;
-              font-weight: 500;
-              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-              backdrop-filter: blur(8px);
-              max-width: 200px;
-              word-wrap: break-word;
-            ">
-              ${node.label || ''}
-            </div>
-          `)
-          .linkColor(() => 'rgba(87, 96, 106, 0.2)')
+          .nodeLabel((node) => {
+            const connections = (data?.links || []).filter(
+              link => {
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target
+                return sourceId === node.id || targetId === node.id
+              }
+            ).length
+            const nodeColor = getNodeColor(node)
+            return `
+              <div style="
+                background: ${nodeColor};
+                color: white;
+                padding: 10px 14px;
+                border-radius: 10px;
+                font-size: 13px;
+                font-weight: 600;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+                max-width: 220px;
+                word-wrap: break-word;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+              ">
+                <div>${node.label || ''}</div>
+                <div style="font-size: 11px; opacity: 0.9; margin-top: 4px;">
+                  ${connections} 个连接
+                </div>
+              </div>
+            `
+          })
+          .linkColor(() => 'rgba(102, 126, 234, 0.25)')
           .linkOpacity(0.4)
           .linkWidth((link) => (link.value || 1) * 0.8)
           .linkDirectionalParticles(2)
@@ -95,8 +183,8 @@ const GraphView = ({ data, onNodeClick }) => {
           .linkDirectionalParticleSpeed(0.003)
           .nodeThreeObject((node) => {
             const group = new THREE.Group()
-            const radius = sizes[node.group] || 4
-            const color = colors[node.group] || '#57606a'
+            const radius = getNodeSize(node)
+            const color = getNodeColor(node)
             
             // 创建发光球体
             const geometry = new THREE.SphereGeometry(radius, 32, 32)
@@ -109,7 +197,7 @@ const GraphView = ({ data, onNodeClick }) => {
               clearcoat: 1.0,
               clearcoatRoughness: 0.1,
               emissive: color,
-              emissiveIntensity: 0.2,
+              emissiveIntensity: 0.3,
             })
             
             const sphere = new THREE.Mesh(geometry, material)
@@ -172,7 +260,14 @@ const GraphView = ({ data, onNodeClick }) => {
 
       graphRef.current.graphData(data || { nodes: [], links: [] })
       updateSize()
-      graphRef.current.zoomToFit(600, 40)
+      
+      // 只在初始化时自动缩放一次
+      if (!graphRef.current.__initialZoom) {
+        graphRef.current.__initialZoom = true
+        setTimeout(() => {
+          graphRef.current.zoomToFit(600, 40)
+        }, 100)
+      }
 
       if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(() => updateSize())
@@ -789,23 +884,23 @@ export default function App() {
           </div>
           <div className="graph-legend">
             <div className="legend-item">
-              <span className="legend-dot" style={{ background: '#0969da' }}></span>
+              <span className="legend-dot" style={{ background: '#667eea' }}></span>
               <span>归档文章</span>
             </div>
             <div className="legend-item">
-              <span className="legend-dot" style={{ background: '#8250df' }}></span>
+              <span className="legend-dot" style={{ background: '#f093fb' }}></span>
               <span>分类</span>
             </div>
             <div className="legend-item">
-              <span className="legend-dot" style={{ background: '#1f883d' }}></span>
+              <span className="legend-dot" style={{ background: '#4facfe' }}></span>
               <span>标签</span>
             </div>
             <div className="legend-item">
-              <span className="legend-dot" style={{ background: '#bf8700' }}></span>
+              <span className="legend-dot" style={{ background: '#43e97b' }}></span>
               <span>路径</span>
             </div>
             <div className="legend-item">
-              <span className="legend-dot" style={{ background: '#cf222e' }}></span>
+              <span className="legend-dot" style={{ background: '#fa709a' }}></span>
               <span>分类体系</span>
             </div>
           </div>

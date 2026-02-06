@@ -726,6 +726,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 
 .graph-canvas {
@@ -736,23 +737,26 @@ button:disabled {
 
 .graph-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-  gap: 16px;
-  min-width: 0;
+  grid-template-columns: 1fr 360px;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .graph-side {
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 16px;
-  background: #fbfcff;
-  min-height: 560px;
-  overflow: auto;
-  max-width: 360px;
+  border-left: 1px solid var(--line);
+  padding: var(--space-xl);
+  background: var(--panel);
+  overflow-y: auto;
+  height: 100%;
 }
 
 .graph-side h3 {
-  margin-top: 0;
+  margin: 0 0 var(--space-lg);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .node-title {
