@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
 
@@ -49,52 +49,122 @@ const GraphView = ({ data, onNodeClick }) => {
       }
 
       if (!graphRef.current) {
+        // 现代化配色方案
         const colors = {
-          archive: '#6f8df2',
-          category: '#f0a46b',
-          tag: '#e9d5c6',
-          path: '#b1c3ff',
-          taxonomy: '#7ab7ff',
-          entity: '#5fc6b8',
+          archive: '#0969da',      // 主要节点 - 蓝色
+          category: '#8250df',     // 分类 - 紫色
+          tag: '#1f883d',          // 标签 - 绿色
+          path: '#bf8700',         // 路径 - 橙色
+          taxonomy: '#cf222e',     // 分类体系 - 红色
+          entity: '#0969da',       // 实体 - 蓝色
         }
+        
+        // 节点大小
         const sizes = {
-          archive: 6,
-          category: 5,
-          tag: 3.8,
-          path: 3.5,
-          taxonomy: 4.8,
-          entity: 4.6,
+          archive: 7,
+          category: 6,
+          tag: 4.5,
+          path: 4,
+          taxonomy: 5.5,
+          entity: 5,
         }
+        
         graphRef.current = ForceGraph3D()(wrapRef.current)
-          .backgroundColor('#f7f8fb')
-          .nodeLabel('label')
-          .linkOpacity(0.35)
-          .linkWidth((link) => (link.value || 1) * 0.7)
+          .backgroundColor('#fafbfc')
+          .nodeLabel((node) => `
+            <div style="
+              background: rgba(13, 17, 23, 0.95);
+              color: white;
+              padding: 8px 12px;
+              border-radius: 8px;
+              font-size: 12px;
+              font-weight: 500;
+              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+              backdrop-filter: blur(8px);
+              max-width: 200px;
+              word-wrap: break-word;
+            ">
+              ${node.label || ''}
+            </div>
+          `)
+          .linkColor(() => 'rgba(87, 96, 106, 0.2)')
+          .linkOpacity(0.4)
+          .linkWidth((link) => (link.value || 1) * 0.8)
+          .linkDirectionalParticles(2)
+          .linkDirectionalParticleWidth(1.5)
+          .linkDirectionalParticleSpeed(0.003)
           .nodeThreeObject((node) => {
             const group = new THREE.Group()
             const radius = sizes[node.group] || 4
-            const material = new THREE.MeshStandardMaterial({
-              color: colors[node.group] || '#cbd2dd',
-              roughness: 0.35,
-              metalness: 0.05,
+            const color = colors[node.group] || '#57606a'
+            
+            // 创建发光球体
+            const geometry = new THREE.SphereGeometry(radius, 32, 32)
+            
+            // 主材质 - 更有光泽
+            const material = new THREE.MeshPhysicalMaterial({
+              color: color,
+              roughness: 0.2,
+              metalness: 0.3,
+              clearcoat: 1.0,
+              clearcoatRoughness: 0.1,
+              emissive: color,
+              emissiveIntensity: 0.2,
             })
-            const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 24), material)
-            const sprite = new SpriteText(node.label || '')
-            sprite.color = node.group === 'archive' ? '#1f1f23' : '#5a5f6a'
-            sprite.textHeight = node.group === 'archive' ? 9 : 6
-            sprite.position.set(0, radius + 2, 0)
+            
+            const sphere = new THREE.Mesh(geometry, material)
+            
+            // 添加外发光效果
+            const glowGeometry = new THREE.SphereGeometry(radius * 1.3, 32, 32)
+            const glowMaterial = new THREE.MeshBasicMaterial({
+              color: color,
+              transparent: true,
+              opacity: 0.15,
+            })
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial)
+            
+            group.add(glow)
             group.add(sphere)
+            
+            // 文字标签 - 更清晰
+            const sprite = new SpriteText(node.label || '')
+            sprite.color = '#24292f'
+            sprite.textHeight = node.group === 'archive' ? 8 : 5.5
+            sprite.fontWeight = node.group === 'archive' ? '700' : '500'
+            sprite.position.set(0, radius + 4, 0)
+            sprite.backgroundColor = 'rgba(255, 255, 255, 0.9)'
+            sprite.padding = 2
+            sprite.borderRadius = 3
+            
             group.add(sprite)
+            
             return group
           })
           .onNodeClick((node) => onNodeClick?.(node))
+          .onNodeHover((node) => {
+            wrapRef.current.style.cursor = node ? 'pointer' : 'default'
+          })
 
         if (!graphRef.current.__lightsAdded) {
           graphRef.current.__lightsAdded = true
-          graphRef.current.scene().add(new THREE.AmbientLight(0xffffff, 0.78))
-          const dirLight = new THREE.DirectionalLight(0xffffff, 0.68)
-          dirLight.position.set(30, 60, 20)
-          graphRef.current.scene().add(dirLight)
+          
+          // 环境光 - 更柔和
+          graphRef.current.scene().add(new THREE.AmbientLight(0xffffff, 0.6))
+          
+          // 主光源
+          const mainLight = new THREE.DirectionalLight(0xffffff, 0.8)
+          mainLight.position.set(50, 50, 50)
+          graphRef.current.scene().add(mainLight)
+          
+          // 补光
+          const fillLight = new THREE.DirectionalLight(0xffffff, 0.4)
+          fillLight.position.set(-50, -50, -50)
+          graphRef.current.scene().add(fillLight)
+          
+          // 点光源 - 增加氛围
+          const pointLight = new THREE.PointLight(0x0969da, 0.5, 200)
+          pointLight.position.set(0, 50, 0)
+          graphRef.current.scene().add(pointLight)
         }
       } else {
         graphRef.current.onNodeClick((node) => onNodeClick?.(node))
@@ -684,7 +754,7 @@ export default function App() {
           <div className="panel-header">
             <div>
               <h2>知识图谱</h2>
-              <p className="panel-sub">点击节点查看子分类或相关文章</p>
+              <p className="panel-sub">3D 可视化知识网络，点击节点查看详情</p>
             </div>
             <div className="graph-controls">
               <button
@@ -692,29 +762,51 @@ export default function App() {
                 className={graphMode === 'taxonomy' ? 'tab active' : 'tab'}
                 onClick={() => setGraphMode('taxonomy')}
               >
-                体系
+                🏗️ 体系
               </button>
               <button
                 type="button"
                 className={graphMode === 'focus' ? 'tab active' : 'tab'}
                 onClick={() => setGraphMode('focus')}
               >
-                聚焦
+                🎯 聚焦
               </button>
               <button
                 type="button"
                 className={graphMode === 'knowledge' ? 'tab active' : 'tab'}
                 onClick={() => setGraphMode('knowledge')}
               >
-                知识
+                📚 知识
               </button>
               <button
                 type="button"
                 className={graphMode === 'global' ? 'tab active' : 'tab'}
                 onClick={() => setGraphMode('global')}
               >
-                全局
+                🌍 全局
               </button>
+            </div>
+          </div>
+          <div className="graph-legend">
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#0969da' }}></span>
+              <span>归档文章</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#8250df' }}></span>
+              <span>分类</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#1f883d' }}></span>
+              <span>标签</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#bf8700' }}></span>
+              <span>路径</span>
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot" style={{ background: '#cf222e' }}></span>
+              <span>分类体系</span>
             </div>
           </div>
           <div className="graph-layout">
