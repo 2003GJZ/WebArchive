@@ -38,7 +38,7 @@ func Load() Config {
 		LLMBaseURL:       getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
 		LLMAPIKey:        getenv("LLM_API_KEY", ""),
 		LLMModel:         getenv("LLM_MODEL", ""),
-		LLMTimeout:       time.Duration(getenvInt("LLM_TIMEOUT_SECONDS", 30)) * time.Second,
+		LLMTimeout:       time.Duration(getenvInt("LLM_TIMEOUT_SECONDS", 90)) * time.Second,
 		LLMEnabled:       getenvBool("LLM_ENABLED", false),
 		AutoTagOnCapture: getenvBool("AUTO_TAG_ON_CAPTURE", false),
 	}

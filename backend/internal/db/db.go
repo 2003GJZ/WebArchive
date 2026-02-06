@@ -15,7 +15,7 @@ func Connect(dsn string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := gdb.AutoMigrate(&models.Archive{}, &models.ArchivePath{}, &models.TaxonomyNode{}); err != nil {
+	if err := gdb.AutoMigrate(&models.Archive{}, &models.ArchivePath{}, &models.TaxonomyNode{}, &models.AppSetting{}); err != nil {
 		return nil, err
 	}
 	return gdb, nil

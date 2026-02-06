@@ -12,7 +12,49 @@ const postArchive = async (serverUrl, payload) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (!response.ok) throw new Error('后端保存失败')
+  let data = null
+  try {
+    data = await response.json()
+  } catch (_err) {
+    data = null
+  }
+  if (!response.ok) {
+    const msg = data?.error || '后端保存失败'
+    throw new Error(msg)
+  }
+  return data
+}
+
+const requestAiTag = async (serverUrl, archiveId) => {
+  const response = await fetch(`${serverUrl}/api/archives/${archiveId}/ai-tag`, {
+    method: 'POST',
+  })
+  let data = null
+  try {
+    data = await response.json()
+  } catch (_err) {
+    data = null
+  }
+  if (!response.ok) {
+    let msg = data?.error || 'AI 分类失败'
+    if (msg.toLowerCase().includes('llm not configured')) {
+      msg = 'AI 未配置，请在前端“AI 设置”里配置'
+    }
+    throw new Error(msg)
+  }
+  return data
+}
+
+const notifyPopup = (payload) => {
+  try {
+    chrome.runtime.sendMessage(payload, () => {
+      if (chrome.runtime.lastError) {
+        // popup may be closed; ignore
+      }
+    })
+  } catch (_err) {
+    // ignore sendMessage errors
+  }
 }
 
 const reportStatus = async (status, message) => {
@@ -24,11 +66,11 @@ const reportStatus = async (status, message) => {
   } catch (_err) {
     // ignore storage errors
   }
-  chrome.runtime.sendMessage({ type: 'capture-status', status, message })
+  notifyPopup({ type: 'capture-status', status, message })
 }
 
 const handleCapture = async (mode, options) => {
-  const { serverUrl, category, tags, autoTag, enableOptional, cleanContent } = options
+  const { serverUrl, category, tags, autoTag, cleanContent } = options
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tab || !tab.id) {
     setBadge('ERR', '#b00020')
@@ -50,16 +92,20 @@ const handleCapture = async (mode, options) => {
     try {
       const payload = {
         ...res.payload,
-        category: enableOptional ? (category || '') : '',
-        tags: enableOptional ? (tags || []) : [],
+        category: category || '',
+        tags: tags || [],
         autoTag: Boolean(autoTag),
       }
-      await postArchive(serverUrl, payload)
+      const archive = await postArchive(serverUrl, payload)
+      if (autoTag && archive?.id) {
+        reportStatus('progress', '已保存，AI 分类中…')
+        await requestAiTag(serverUrl, archive.id)
+      }
       setBadge('OK', '#2ea043')
       reportStatus('ok', '归档成功')
-    } catch (_err) {
+    } catch (err) {
       setBadge('ERR', '#b00020')
-      reportStatus('error', '请求失败')
+      reportStatus('error', err?.message || '请求失败')
     }
   })
 }

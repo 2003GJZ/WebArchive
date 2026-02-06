@@ -11,6 +11,7 @@ import (
 	"webarchive/internal/config"
 	"webarchive/internal/db"
 	"webarchive/internal/processor"
+	"webarchive/internal/settings"
 	"webarchive/internal/storage"
 )
 
@@ -29,8 +30,24 @@ func main() {
 
 	proc := processor.New(store, cfg.HTTPTimeout)
 	var llmClient *ai.Client
-	if cfg.LLMEnabled || cfg.LLMAPIKey != "" {
-		llmClient = ai.NewClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel, cfg.LLMTimeout)
+	llmCfg, err := settings.LoadLLM(gdb)
+	if err != nil {
+		log.Printf("load llm settings failed: %v", err)
+	}
+	baseURL := cfg.LLMBaseURL
+	apiKey := cfg.LLMAPIKey
+	model := cfg.LLMModel
+	if llmCfg.BaseURL != "" {
+		baseURL = llmCfg.BaseURL
+	}
+	if llmCfg.APIKey != "" {
+		apiKey = llmCfg.APIKey
+	}
+	if llmCfg.Model != "" {
+		model = llmCfg.Model
+	}
+	if cfg.LLMEnabled || apiKey != "" {
+		llmClient = ai.NewClient(baseURL, apiKey, model, cfg.LLMTimeout)
 	}
 
 	r := gin.Default()

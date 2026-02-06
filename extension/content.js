@@ -11,49 +11,99 @@ const findFavicon = () => {
   return ''
 }
 
+const escapeHtml = (value) =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const collectInlineSheetRules = () => {
+  const rules = []
+  const sheets = Array.from(document.styleSheets || [])
+  sheets.forEach((sheet) => {
+    try {
+      if (!sheet.cssRules) return
+      for (const rule of sheet.cssRules) {
+        if (rule && rule.cssText) rules.push(rule.cssText)
+      }
+    } catch (_err) {
+      // cross-origin stylesheets are not accessible
+    }
+  })
+  return rules.join('\n')
+}
+
+const collectHeadHTML = () => {
+  const parts = ['<meta charset="utf-8" />', `<title>${escapeHtml(document.title || '')}</title>`]
+  document.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
+    if (link.href) {
+      parts.push(`<link rel="stylesheet" href="${link.href}" />`)
+    }
+  })
+  document.querySelectorAll('style').forEach((style) => {
+    if (style.textContent) {
+      parts.push(`<style>${style.textContent}</style>`)
+    }
+  })
+  const inlineRules = collectInlineSheetRules()
+  if (inlineRules) {
+    parts.push(`<style>${inlineRules}</style>`)
+  }
+  return parts.join('\n')
+}
+
+const getBodyAttrs = () => ({
+  id: document.body?.id || '',
+  className: document.body?.className || '',
+})
+
+const findWrapperElement = () => {
+  const preferredIds = ['app', 'root', '__next', '__nuxt', 'main', 'content']
+  for (const id of preferredIds) {
+    const el = document.getElementById(id)
+    if (el) return el
+  }
+  const body = document.body
+  if (!body) return null
+  const candidates = Array.from(body.children).filter((node) => node.tagName && node.tagName !== 'SCRIPT')
+  if (candidates.length === 1) return candidates[0]
+  return null
+}
+
+const wrapWithContainer = (innerHTML) => {
+  const wrapper = findWrapperElement()
+  if (!wrapper) {
+    return `<div class="webarchive-root">${innerHTML}</div>`
+  }
+  const tag = wrapper.tagName.toLowerCase()
+  const attrs = []
+  if (wrapper.id) attrs.push(`id="${escapeHtml(wrapper.id)}"`)
+  if (wrapper.className) attrs.push(`class="${escapeHtml(wrapper.className)}"`)
+  const attrText = attrs.length > 0 ? ` ${attrs.join(' ')}` : ''
+  return `<${tag}${attrText}>${innerHTML}</${tag}>`
+}
+
+const wrapHtmlDocument = (bodyHTML, opts = {}) => {
+  const attrs = []
+  if (opts.bodyId) attrs.push(`id="${escapeHtml(opts.bodyId)}"`)
+  if (opts.bodyClass) attrs.push(`class="${escapeHtml(opts.bodyClass)}"`)
+  const wrapped = opts.wrap ? wrapWithContainer(bodyHTML) : bodyHTML
+  const attrText = attrs.length > 0 ? ` ${attrs.join(' ')}` : ''
+  return `<!doctype html><html><head>${collectHeadHTML()}</head><body${attrText}>${wrapped}</body></html>`
+}
+
 const captureReadable = () => {
   const documentClone = document.cloneNode(true)
   const reader = new Readability(documentClone)
   const article = reader.parse()
-  
-  // 收集页面的所有样式
-  const styles = []
-  
-  // 1. 收集 <style> 标签
-  document.querySelectorAll('style').forEach(style => {
-    if (style.textContent) {
-      styles.push(style.textContent)
-    }
-  })
-  
-  // 2. 收集外部样式表（内联到 HTML 中）
-  document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
-    try {
-      if (link.sheet && link.sheet.cssRules) {
-        const rules = Array.from(link.sheet.cssRules)
-          .map(rule => rule.cssText)
-          .join('\n')
-        if (rules) {
-          styles.push(rules)
-        }
-      }
-    } catch (e) {
-      // 跨域样式表无法访问，忽略
-    }
-  })
-  
-  // 3. 构建包含样式的完整 HTML
-  let htmlWithStyles = article?.content || document.documentElement.outerHTML
-  
-  if (styles.length > 0 && article?.content) {
-    const styleTag = `<style>\n${styles.join('\n\n')}\n</style>\n`
-    htmlWithStyles = styleTag + htmlWithStyles
-  }
-  
+  const bodyHTML = article?.content || document.body.innerHTML || document.documentElement.outerHTML
+  const bodyAttrs = getBodyAttrs()
   return {
     title: article?.title || document.title || '',
-    html: htmlWithStyles,
-    content: article?.textContent || '',
+    html: wrapHtmlDocument(bodyHTML, { wrap: true, bodyId: bodyAttrs.id, bodyClass: bodyAttrs.className }),
+    content: article?.textContent || document.body.textContent || '',
     excerpt: article?.excerpt || '',
     byline: article?.byline || '',
     siteName: article?.siteName || '',
@@ -77,8 +127,8 @@ const createOverlay = () => {
   overlay.style.position = 'fixed'
   overlay.style.zIndex = '2147483647'
   overlay.style.pointerEvents = 'none'
-  overlay.style.border = '2px solid #ff6a3d'
-  overlay.style.background = 'rgba(255, 106, 61, 0.1)'
+  overlay.style.border = '2px solid #1f6feb'
+  overlay.style.background = 'rgba(31, 111, 235, 0.12)'
   document.body.appendChild(overlay)
   return overlay
 }
@@ -116,7 +166,9 @@ const startSelection = (sendResponse) => {
       sendResponse({ ok: false, error: '选区无效' })
       return
     }
-    const payload = buildPayload(el.outerHTML, el.textContent || '')
+    const bodyAttrs = getBodyAttrs()
+    const html = wrapHtmlDocument(el.outerHTML, { wrap: true, bodyId: bodyAttrs.id, bodyClass: bodyAttrs.className })
+    const payload = buildPayload(html, el.textContent || '')
     sendResponse({ ok: true, payload })
   }
 
@@ -139,16 +191,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     try {
       let payload
       if (msg.cleanContent !== false) {
-        // 使用 Readability 智能提取正文
         const article = captureReadable()
         payload = buildPayload(article.html, article.content, article)
       } else {
-        // 保存完整页面
-        payload = buildPayload(
-          document.documentElement.outerHTML,
-          document.body.textContent || '',
-          { title: document.title }
-        )
+        const bodyAttrs = getBodyAttrs()
+        const html = wrapHtmlDocument(document.body.innerHTML || document.documentElement.outerHTML, {
+          wrap: false,
+          bodyId: bodyAttrs.id,
+          bodyClass: bodyAttrs.className,
+        })
+        payload = buildPayload(html, document.body.textContent || '', { title: document.title })
       }
       sendResponse({ ok: true, payload })
     } catch (err) {

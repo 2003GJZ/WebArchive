@@ -14,14 +14,13 @@ const setStatus = (msg) => {
 }
 
 const updateOptionalState = () => {
-  const enabled = enableOptionalInput?.checked
-  if (optionalDetails) {
-    if (enabled) {
-      optionalDetails.classList.remove('disabled')
-    } else {
-      optionalDetails.classList.add('disabled')
-      optionalDetails.removeAttribute('open')
-    }
+  const enabled = Boolean(enableOptionalInput?.checked)
+  if (!optionalDetails) return
+  if (enabled) {
+    optionalDetails.classList.remove('disabled')
+  } else {
+    optionalDetails.classList.add('disabled')
+    optionalDetails.removeAttribute('open')
   }
 }
 
@@ -44,7 +43,7 @@ const loadServer = async () => {
     updateOptionalState()
   }
   if (cleanContentInput) {
-    cleanContentInput.checked = data.cleanContent !== false // 默认开启
+    cleanContentInput.checked = data.cleanContent !== false
   }
   if (data.lastStatus) setStatus(data.lastStatus)
 }

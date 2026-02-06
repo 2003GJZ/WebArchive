@@ -12,6 +12,7 @@ import (
 
 	"webarchive/internal/ai"
 	"webarchive/internal/models"
+	"webarchive/internal/settings"
 )
 
 type AIConfigRequest struct {
@@ -40,6 +41,20 @@ func (s *Server) updateAIConfig(c *gin.Context) {
 			s.LLM.Model = req.Model
 		}
 	}
+	if s.LLM != nil && s.LLM.HTTP != nil {
+		s.LLM.HTTP.Timeout = 90 * time.Second
+	}
+
+	if s.LLM != nil {
+		if err := settings.SaveLLM(s.DB, settings.LLMSettings{
+			BaseURL: s.LLM.BaseURL,
+			APIKey:  s.LLM.APIKey,
+			Model:   s.LLM.Model,
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "save config failed"})
+			return
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"baseUrl": s.LLM.BaseURL,
@@ -65,7 +80,7 @@ func (s *Server) aiTagArchive(c *gin.Context) {
 
 	updated, err := s.classifyArchive(ctx, item)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "llm failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	paths, _ := s.loadArchivePaths(updated.ID)

@@ -286,7 +286,7 @@ func (p *Processor) rewriteCSS(ctx context.Context, archiveID string, cssURL str
 
 	assets := make([]Asset, 0)
 	reURL := regexp.MustCompile(`url\(([^)]+)\)`)
-	reImport := regexp.MustCompile(`@import\s+(?:url\()?\s*(['"]?)([^'")\s]+)\1\s*\)?`)
+	reImport := regexp.MustCompile(`@import\s+(?:url\()?\s*['"]?([^'")\s]+)['"]?\s*\)?`)
 
 	replaceFn := func(raw string) (string, *Asset, []Asset) {
 		raw = strings.TrimSpace(raw)
@@ -333,10 +333,10 @@ func (p *Processor) rewriteCSS(ctx context.Context, archiveID string, cssURL str
 
 	cssText = reImport.ReplaceAllStringFunc(cssText, func(m string) string {
 		matches := reImport.FindStringSubmatch(m)
-		if len(matches) < 3 {
+		if len(matches) < 2 {
 			return m
 		}
-		apiPath, asset, extra := replaceFn(matches[2])
+		apiPath, asset, extra := replaceFn(matches[1])
 		if asset != nil {
 			assets = append(assets, *asset)
 		}
