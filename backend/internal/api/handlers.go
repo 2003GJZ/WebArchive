@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"webarchive/internal/ai"
+	"webarchive/internal/graphflow"
 	"webarchive/internal/models"
 	"webarchive/internal/processor"
 	"webarchive/internal/storage"
@@ -27,6 +28,7 @@ type Server struct {
 	Processor     *processor.Processor
 	LLM           *ai.Client
 	AutoTag       bool
+	Eino          *graphflow.Analyzer
 	analyzeMu     sync.Mutex
 	analyzeCancel context.CancelFunc
 	analyzeStatus AnalysisStatus

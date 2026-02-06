@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"webarchive/internal/ai"
+	"webarchive/internal/graphflow"
 	"webarchive/internal/models"
 	"webarchive/internal/settings"
 )
@@ -133,6 +134,18 @@ func (s *Server) classifyArchive(ctx context.Context, item models.Archive) (mode
 	if err != nil {
 		return s.tagArchive(ctx, item)
 	}
+	if s.Eino != nil && s.LLM != nil && s.LLM.Enabled() {
+		rootLabels := buildRootLabels(nodes)
+		out, err := s.Eino.Analyze(ctx, graphflow.GraphInput{
+			Archive:  item,
+			Taxonomy: rootLabels,
+			LLM:      s.LLM,
+		})
+		if err == nil {
+			return s.applyGraphOutput(item, out)
+		}
+	}
+
 	path := []string{}
 	if len(nodes) > 0 {
 		path, _ = s.pickPath(ctx, item, nodes)
@@ -181,6 +194,71 @@ func (s *Server) classifyArchive(ctx context.Context, item models.Archive) (mode
 			"tags_json":      item.TagsJSON,
 			"hierarchy_json": item.HierarchyJSON,
 			"hierarchy_path": item.HierarchyPath,
+		}).Error; err != nil {
+		return item, err
+	}
+
+	return item, nil
+}
+
+func buildRootLabels(nodes []models.TaxonomyNode) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, node := range nodes {
+		if node.ParentID != nil {
+			continue
+		}
+		label := strings.TrimSpace(node.Label)
+		if label == "" || seen[label] {
+			continue
+		}
+		seen[label] = true
+		out = append(out, label)
+	}
+	return out
+}
+
+func (s *Server) applyGraphOutput(item models.Archive, out graphflow.GraphOutput) (models.Archive, error) {
+	path := out.Path
+	var chosenPath string
+	if len(path) > 0 {
+		item.Category = path[0]
+		if err := s.ensureTaxonomyPath(path); err != nil {
+			return item, err
+		}
+		hierarchyJSON, _ := json.Marshal(path)
+		item.HierarchyJSON = hierarchyJSON
+		chosenPath = strings.Join(path, "/")
+		item.HierarchyPath = chosenPath
+	} else if out.Category != "" {
+		item.Category = out.Category
+		chosenPath = out.Category
+		item.HierarchyPath = chosenPath
+		item.HierarchyJSON, _ = json.Marshal([]string{out.Category})
+	}
+
+	tagsJSON, _ := json.Marshal(out.Tags)
+	item.TagsJSON = tagsJSON
+	entitiesJSON, _ := json.Marshal(out.Entities)
+	relationsJSON, _ := json.Marshal(out.Relations)
+	item.EntitiesJSON = entitiesJSON
+	item.RelationsJSON = relationsJSON
+	item.Summary = strings.TrimSpace(out.Summary)
+
+	if chosenPath != "" {
+		_ = s.replaceArchivePaths(item.ID, []string{chosenPath})
+	}
+
+	if err := s.DB.Model(&models.Archive{}).
+		Where("id = ?", item.ID).
+		Updates(map[string]any{
+			"category":       item.Category,
+			"tags_json":      item.TagsJSON,
+			"hierarchy_json": item.HierarchyJSON,
+			"hierarchy_path": item.HierarchyPath,
+			"entities_json":  item.EntitiesJSON,
+			"relations_json": item.RelationsJSON,
+			"summary":        item.Summary,
 		}).Error; err != nil {
 		return item, err
 	}

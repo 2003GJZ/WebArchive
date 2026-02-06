@@ -998,17 +998,26 @@ button:disabled {
 
 .graph-layout {
   display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 16px;
   flex: 1;
+  min-height: 560px;
   overflow: hidden;
 }
 
+.graph-canvas {
+  height: 560px;
+  min-height: 560px;
+}
+
 .graph-side {
-  border-left: 1px solid var(--line);
-  padding: 20px;
-  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  background: #fbfcff;
   overflow-y: auto;
+  min-height: 560px;
+  max-width: 360px;
 }
 
 .graph-side h3 {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
 
@@ -32,10 +32,22 @@ const GraphView = ({ data, onNodeClick }) => {
 
   useEffect(() => {
     let disposed = false
+    let resizeObserver = null
+    let resizeHandler = null
     const init = async () => {
-      const [{ default: ForceGraph3D }, { default: SpriteText }, { default: THREE }] =
+      const [{ default: ForceGraph3D }, { default: SpriteText }, THREE] =
         await Promise.all([import('3d-force-graph'), import('three-spritetext'), import('three')])
       if (disposed || !wrapRef.current) return
+
+      const updateSize = () => {
+        if (!wrapRef.current || !graphRef.current) return
+        const { clientWidth, clientHeight } = wrapRef.current
+        if (clientWidth > 0 && clientHeight > 0) {
+          graphRef.current.width(clientWidth)
+          graphRef.current.height(clientHeight)
+        }
+      }
+
       if (!graphRef.current) {
         const colors = {
           archive: '#6f8df2',
@@ -43,6 +55,7 @@ const GraphView = ({ data, onNodeClick }) => {
           tag: '#e9d5c6',
           path: '#b1c3ff',
           taxonomy: '#7ab7ff',
+          entity: '#5fc6b8',
         }
         const sizes = {
           archive: 6,
@@ -50,6 +63,7 @@ const GraphView = ({ data, onNodeClick }) => {
           tag: 3.8,
           path: 3.5,
           taxonomy: 4.8,
+          entity: 4.6,
         }
         graphRef.current = ForceGraph3D()(wrapRef.current)
           .backgroundColor('#f7f8fb')
@@ -74,6 +88,7 @@ const GraphView = ({ data, onNodeClick }) => {
             return group
           })
           .onNodeClick((node) => onNodeClick?.(node))
+
         if (!graphRef.current.__lightsAdded) {
           graphRef.current.__lightsAdded = true
           graphRef.current.scene().add(new THREE.AmbientLight(0xffffff, 0.78))
@@ -81,12 +96,32 @@ const GraphView = ({ data, onNodeClick }) => {
           dirLight.position.set(30, 60, 20)
           graphRef.current.scene().add(dirLight)
         }
+      } else {
+        graphRef.current.onNodeClick((node) => onNodeClick?.(node))
       }
+
       graphRef.current.graphData(data || { nodes: [], links: [] })
+      updateSize()
+      graphRef.current.zoomToFit(600, 40)
+
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => updateSize())
+        resizeObserver.observe(wrapRef.current)
+      } else {
+        resizeHandler = () => updateSize()
+        window.addEventListener('resize', resizeHandler)
+      }
     }
     init()
+
     return () => {
       disposed = true
+      if (resizeObserver && wrapRef.current) {
+        resizeObserver.unobserve(wrapRef.current)
+        resizeObserver.disconnect()
+      } else if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler)
+      }
     }
   }, [data, onNodeClick])
 
@@ -226,9 +261,15 @@ export default function App() {
     }
   }
 
-  const loadGraph = async () => {
+  const loadGraph = async (mode = '') => {
     try {
-      const res = await fetch(`${API_BASE}/api/graph`)
+      let query = ''
+      if (mode === 'knowledge') {
+        query = '?mode=knowledge&limit=400&archives=160'
+      } else if (mode) {
+        query = `?mode=${mode}`
+      }
+      const res = await fetch(`${API_BASE}/api/graph${query}`)
       if (!res.ok) throw new Error('图谱加载失败')
       const data = await res.json()
       setGraphData(data)
@@ -343,6 +384,7 @@ export default function App() {
   useEffect(() => {
     if (view !== 'graph') return
     if (graphMode === 'global') loadGraph()
+    if (graphMode === 'knowledge') loadGraph('knowledge')
     if (graphMode === 'taxonomy') loadTaxonomy()
   }, [view, graphMode])
 
@@ -519,7 +561,7 @@ export default function App() {
               <h1>{selected.title || '未命名页面'}</h1>
               <div className="immersive-meta">
                 <span>{selected.siteName || '未知站点'}</span>
-                <span>•</span>
+                <span>·</span>
                 <span>{formatDateTime(selected.createdAt)}</span>
               </div>
             </div>
@@ -528,7 +570,7 @@ export default function App() {
                 打开原文
               </a>
               <button type="button" className="ghost small" onClick={exitImmersiveMode}>
-                退出全屏 (ESC)
+                退出全屏(ESC)
               </button>
             </div>
           </div>
@@ -556,19 +598,19 @@ export default function App() {
           </div>
           <div className="brand-text">
             <h1>WebArchive</h1>
-            <p className="brand-slogan">存住价值 · 连成逻辑 · 构建体系</p>
+            <p className="brand-slogan">存住价值 · 连接逻辑 · 构建体系</p>
           </div>
         </div>
         <div className="stats">
           <div className="stat-item">
-            <div className="stat-icon">📚</div>
+            <div className="stat-icon">📌</div>
             <div className="stat-content">
               <span className="stat-value">{stats.total}</span>
               <span className="stat-label">归档数量</span>
             </div>
           </div>
           <div className="stat-item">
-            <div className="stat-icon">⚡</div>
+            <div className="stat-icon">🕘</div>
             <div className="stat-content">
               <span className="stat-value">{stats.latest}</span>
               <span className="stat-label">最近更新</span>
@@ -661,6 +703,13 @@ export default function App() {
               </button>
               <button
                 type="button"
+                className={graphMode === 'knowledge' ? 'tab active' : 'tab'}
+                onClick={() => setGraphMode('knowledge')}
+              >
+                知识
+              </button>
+              <button
+                type="button"
                 className={graphMode === 'global' ? 'tab active' : 'tab'}
                 onClick={() => setGraphMode('global')}
               >
@@ -749,9 +798,7 @@ export default function App() {
                   )}
                 </>
               )}
-              {graphMode !== 'taxonomy' && (
-                <div className="hint">切换到“体系”查看层级分类</div>
-              )}
+              {graphMode !== 'taxonomy' && <div className="hint">切换到“体系”查看层级分类</div>}
             </aside>
           </div>
         </section>
@@ -803,11 +850,11 @@ export default function App() {
                 onKeyDown={(e) => e.key === 'Enter' && loadArchives()}
                 placeholder="分类"
               />
-              <input 
-                value={tag} 
-                onChange={(e) => setTag(e.target.value)} 
+              <input
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && loadArchives()}
-                placeholder="标签" 
+                placeholder="标签"
               />
               <button type="button" className="primary" onClick={loadArchives}>
                 搜索
@@ -842,7 +889,7 @@ export default function App() {
                     <div className="card-title">{item.title || '未命名页面'}</div>
                     <div className="card-meta">
                       <span>{item.siteName || '未知站点'}</span>
-                      <span>•</span>
+                      <span>·</span>
                       <span>{formatDateTime(item.createdAt)}</span>
                     </div>
                     <div className="card-tags">
@@ -883,11 +930,7 @@ export default function App() {
               </div>
               {selected && (
                 <div className="actions">
-                  <button
-                    type="button"
-                    className="primary small"
-                    onClick={() => enterImmersiveMode(selected)}
-                  >
+                  <button type="button" className="primary small" onClick={() => enterImmersiveMode(selected)}>
                     全屏阅读
                   </button>
                   <button type="button" className="ghost small" onClick={() => setMetaOpen((v) => !v)}>
@@ -929,7 +972,7 @@ export default function App() {
                     rows={2}
                     value={form.hierarchy}
                     onChange={(e) => setForm((s) => ({ ...s, hierarchy: e.target.value }))}
-                    placeholder={'例如：计算机/网络/TCP\n计算机/网络/UDP/HTTP3'}
+                    placeholder={'例如：计算机/网络/TCP\n计算机网络/UDP/HTTP3'}
                   />
                 </div>
                 <button type="button" className="primary" disabled={!selected || saving} onClick={saveMeta}>
@@ -948,9 +991,7 @@ export default function App() {
               </div>
             )}
             {!selected && <div className="hint">选择左侧内容即可预览</div>}
-            {selected && (
-              <iframe title="archive-preview" src={`${API_BASE}/api/archives/${selected.id}/html`} />
-            )}
+            {selected && <iframe title="archive-preview" src={`${API_BASE}/api/archives/${selected.id}/html`} />}
           </section>
         </main>
       )}

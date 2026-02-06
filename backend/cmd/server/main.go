@@ -10,6 +10,7 @@ import (
 	"webarchive/internal/api"
 	"webarchive/internal/config"
 	"webarchive/internal/db"
+	"webarchive/internal/graphflow"
 	"webarchive/internal/processor"
 	"webarchive/internal/settings"
 	"webarchive/internal/storage"
@@ -50,6 +51,16 @@ func main() {
 		llmClient = ai.NewClient(baseURL, apiKey, model, cfg.LLMTimeout)
 	}
 
+	var einoAnalyzer *graphflow.Analyzer
+	if cfg.EinoEnabled {
+		analyzer, err := graphflow.NewAnalyzer()
+		if err != nil {
+			log.Printf("eino disabled: %v", err)
+		} else {
+			einoAnalyzer = analyzer
+		}
+	}
+
 	r := gin.Default()
 	r.Use(corsMiddleware())
 
@@ -59,6 +70,7 @@ func main() {
 		Processor: proc,
 		LLM:       llmClient,
 		AutoTag:   cfg.AutoTagOnCapture,
+		Eino:      einoAnalyzer,
 	}
 	srv.RegisterRoutes(r)
 

@@ -158,5 +158,9 @@ func needsAnalysis(item models.Archive) bool {
 	if raw == "" || raw == "null" || raw == "[]" {
 		return true
 	}
+	entities := strings.TrimSpace(string(item.EntitiesJSON))
+	if entities == "" || entities == "null" || entities == "[]" {
+		return true
+	}
 	return false
 }
