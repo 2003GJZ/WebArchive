@@ -6,6 +6,7 @@ const categoryInput = document.getElementById('category')
 const tagsInput = document.getElementById('tags')
 const autoTagInput = document.getElementById('autoTag')
 const enableOptionalInput = document.getElementById('enableOptional')
+const cleanContentInput = document.getElementById('cleanContent')
 const optionalDetails = document.getElementById('optionalDetails')
 
 const setStatus = (msg) => {
@@ -31,6 +32,7 @@ const loadServer = async () => {
     'tags',
     'autoTag',
     'enableOptional',
+    'cleanContent',
     'lastStatus',
   ])
   serverInput.value = data.serverUrl || 'http://localhost:8080'
@@ -40,6 +42,9 @@ const loadServer = async () => {
   if (enableOptionalInput) {
     enableOptionalInput.checked = Boolean(data.enableOptional)
     updateOptionalState()
+  }
+  if (cleanContentInput) {
+    cleanContentInput.checked = data.cleanContent !== false // 默认开启
   }
   if (data.lastStatus) setStatus(data.lastStatus)
 }
@@ -51,6 +56,7 @@ const saveSettings = async () => {
     tags: tagsInput?.value.trim() || '',
     autoTag: Boolean(autoTagInput?.checked),
     enableOptional: Boolean(enableOptionalInput?.checked),
+    cleanContent: Boolean(cleanContentInput?.checked),
   })
 }
 
@@ -78,6 +84,7 @@ const sendToBackground = async (type) => {
     tags: buildTags(),
     autoTag: Boolean(autoTagInput?.checked),
     enableOptional: Boolean(enableOptionalInput?.checked),
+    cleanContent: Boolean(cleanContentInput?.checked),
   })
 }
 
@@ -96,6 +103,10 @@ if (enableOptionalInput) {
     updateOptionalState()
     saveSettings()
   })
+}
+
+if (cleanContentInput) {
+  cleanContentInput.addEventListener('change', saveSettings)
 }
 
 chrome.runtime.onMessage.addListener((msg) => {

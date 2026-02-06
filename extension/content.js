@@ -15,9 +15,44 @@ const captureReadable = () => {
   const documentClone = document.cloneNode(true)
   const reader = new Readability(documentClone)
   const article = reader.parse()
+  
+  // 收集页面的所有样式
+  const styles = []
+  
+  // 1. 收集 <style> 标签
+  document.querySelectorAll('style').forEach(style => {
+    if (style.textContent) {
+      styles.push(style.textContent)
+    }
+  })
+  
+  // 2. 收集外部样式表（内联到 HTML 中）
+  document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+    try {
+      if (link.sheet && link.sheet.cssRules) {
+        const rules = Array.from(link.sheet.cssRules)
+          .map(rule => rule.cssText)
+          .join('\n')
+        if (rules) {
+          styles.push(rules)
+        }
+      }
+    } catch (e) {
+      // 跨域样式表无法访问，忽略
+    }
+  })
+  
+  // 3. 构建包含样式的完整 HTML
+  let htmlWithStyles = article?.content || document.documentElement.outerHTML
+  
+  if (styles.length > 0 && article?.content) {
+    const styleTag = `<style>\n${styles.join('\n\n')}\n</style>\n`
+    htmlWithStyles = styleTag + htmlWithStyles
+  }
+  
   return {
     title: article?.title || document.title || '',
-    html: article?.content || document.documentElement.outerHTML,
+    html: htmlWithStyles,
     content: article?.textContent || '',
     excerpt: article?.excerpt || '',
     byline: article?.byline || '',
@@ -102,8 +137,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'capture') {
     try {
-      const article = captureReadable()
-      const payload = buildPayload(article.html, article.content, article)
+      let payload
+      if (msg.cleanContent !== false) {
+        // 使用 Readability 智能提取正文
+        const article = captureReadable()
+        payload = buildPayload(article.html, article.content, article)
+      } else {
+        // 保存完整页面
+        payload = buildPayload(
+          document.documentElement.outerHTML,
+          document.body.textContent || '',
+          { title: document.title }
+        )
+      }
       sendResponse({ ok: true, payload })
     } catch (err) {
       sendResponse({ ok: false, error: err.message || 'capture failed' })

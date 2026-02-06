@@ -540,21 +540,39 @@ export default function App() {
         </div>
       )}
       <header className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">WebArchive 知识库</p>
-          <h1>网页归档 · 知识图谱 · 智能分类</h1>
-          <p className="subtext">
-            一键采集网页内容，AI 自动分类标注，构建个人知识体系
-          </p>
+        <div className="hero-brand">
+          <div className="brand-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <rect width="32" height="32" rx="8" fill="url(#gradient)" />
+              <path d="M8 12h16M8 16h16M8 20h12" stroke="white" strokeWidth="2" strokeLinecap="round" />
+              <circle cx="24" cy="20" r="3" fill="white" />
+              <defs>
+                <linearGradient id="gradient" x1="0" y1="0" x2="32" y2="32">
+                  <stop offset="0%" stopColor="#0969da" />
+                  <stop offset="100%" stopColor="#1f6feb" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <div className="brand-text">
+            <h1>WebArchive</h1>
+            <p className="brand-slogan">存住价值 · 连成逻辑 · 构建体系</p>
+          </div>
         </div>
         <div className="stats">
-          <div>
-            <span className="label">归档数量</span>
-            <strong>{stats.total}</strong>
+          <div className="stat-item">
+            <div className="stat-icon">📚</div>
+            <div className="stat-content">
+              <span className="stat-value">{stats.total}</span>
+              <span className="stat-label">归档数量</span>
+            </div>
           </div>
-          <div>
-            <span className="label">最近更新</span>
-            <strong>{stats.latest}</strong>
+          <div className="stat-item">
+            <div className="stat-icon">⚡</div>
+            <div className="stat-content">
+              <span className="stat-value">{stats.latest}</span>
+              <span className="stat-label">最近更新</span>
+            </div>
           </div>
         </div>
       </header>
@@ -846,8 +864,8 @@ export default function App() {
                       }}
                       title="全屏阅读"
                     >
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
                       </svg>
                     </button>
                   )}

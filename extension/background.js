@@ -28,7 +28,7 @@ const reportStatus = async (status, message) => {
 }
 
 const handleCapture = async (mode, options) => {
-  const { serverUrl, category, tags, autoTag, enableOptional } = options
+  const { serverUrl, category, tags, autoTag, enableOptional, cleanContent } = options
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tab || !tab.id) {
     setBadge('ERR', '#b00020')
@@ -36,7 +36,7 @@ const handleCapture = async (mode, options) => {
     return
   }
 
-  chrome.tabs.sendMessage(tab.id, { type: mode }, async (res) => {
+  chrome.tabs.sendMessage(tab.id, { type: mode, cleanContent }, async (res) => {
     if (chrome.runtime.lastError) {
       setBadge('ERR', '#b00020')
       reportStatus('error', '内容脚本未响应，请刷新页面')
